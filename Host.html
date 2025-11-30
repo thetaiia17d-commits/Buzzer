@@ -763,9 +763,10 @@
     document.getElementById("unlockAnswersPermanent").onclick = () => setAnswerState('open', 0);
     document.getElementById("lockAnswers").onclick = () => setAnswerState('locked');
     document.getElementById("resetAnswers").onclick = async () => {
-        if (!confirm("Xóa toàn bộ đáp án?")) return;
+        // Đã bỏ confirm
         await supabase.from('answers').delete().eq('room_code', currentRoom);
         answers = []; renderAnswers();
+        showPopup("Đã reset toàn bộ đáp án!");
     };
 
     async function setBuzzState(state, duration = 0) {
@@ -782,9 +783,10 @@
     document.getElementById("unlockBuzzPermanent").onclick = () => setBuzzState('open', 0);
     document.getElementById("lockBuzz").onclick = () => setBuzzState('locked');
     document.getElementById("resetBuzz").onclick = async () => {
-        if (!confirm("Xóa toàn bộ chuông?")) return;
+        // Đã bỏ confirm
         await supabase.from('buzzes').delete().eq('room_code', currentRoom);
         buzzOrder = []; renderBuzz();
+        showPopup("Đã reset toàn bộ chuông!");
     };
 
     // --- LIST USERS POPUP ---
@@ -883,7 +885,7 @@
 
     // --- EXPORT ---
     document.getElementById("btnExportResults").onclick = () => {
-        if (!currentRoom) return;
+        if (!currentRoom) return showPopup("Chưa có phòng để xuất!", "error");
         const wb = XLSX.utils.book_new();
 
         // Sheet 1: Đáp án
