@@ -478,11 +478,31 @@
         return (ms / 1000).toFixed(3) + "s";
     }
 
+    /**
+     * Hàm tính thời gian trôi qua từ thời điểm mở (startTime) đến thời điểm ghi nhận (isoDate).
+     * @param {string} isoDate - Timestamp ISO của sự kiện (lấy từ created_at).
+     * @param {number} startTime - Timestamp epoch (ms) của thời điểm mở.
+     * @returns {string} Thời gian trôi qua.
+     */
     function formatTimeDisplay(isoDate, startTime) {
         if (!startTime || !isoDate) return "N/A";
+        // Lấy timestamp miligiây của sự kiện (thời điểm bấm/gửi)
         const ts = new Date(isoDate).getTime();
-        let diff = ts - startTime;
-        if (diff < 0) diff = 0;
+        // Tính toán sự khác biệt
+        let diff = ts - startTime; 
+        
+        // --- CHỈNH SỬA: Bổ sung logic kiểm tra nếu thời gian bấm xảy ra trước khi mở ---
+        // Do chênh lệch đồng hồ giữa Host và Database/Contestant, nếu diff quá nhỏ (ví dụ < -1s)
+        // thì có thể là do chênh lệch đồng hồ. Ta sẽ cho là 0 hoặc N/A.
+        // Tuy nhiên, để giữ tính toán thời gian trôi qua, ta chỉ đảm bảo nó không âm.
+        if (diff < 0) {
+            // Đây là trường hợp thời gian bấm chuông nhỏ hơn thời gian mở chuông được ghi nhận trên máy Host.
+            // Điều này thường xảy ra do độ trễ mạng hoặc chênh lệch đồng hồ.
+            // Trả về N/A hoặc 0.000s để tránh số âm.
+             return "0.000s (Delay)"; // Ghi chú thêm để dễ debug.
+        }
+        
+        // Trả về kết quả chính xác
         return (diff / 1000).toFixed(3) + "s";
     }
 
@@ -506,7 +526,7 @@
         const aDisp = document.getElementById("answerTimeElapsed");
         const bDisp = document.getElementById("buzzTimeElapsed");
 
-        // Lấy element trạng thái để tự động khóa giao diện khi hết giờ (Yêu cầu 2)
+        // Lấy element trạng thái để tự động khóa giao diện khi hết giờ
         const sA = document.getElementById("statusAnswer");
         const sB = document.getElementById("statusBuzz");
 
@@ -515,7 +535,7 @@
             const remain = answerEndTime - now;
             if (remain <= 0) {
                 aDisp.innerText = "Hết giờ!";
-                // Tự động chuyển giao diện sang trạng thái Khóa (Yêu cầu 2)
+                // Tự động chuyển giao diện sang trạng thái Khóa 
                 sA.className = "status-box locked";
                 sA.innerText = "Đáp án: 🔒 Đã hết giờ";
             }
@@ -534,7 +554,7 @@
             const remain = buzzEndTime - now;
             if (remain <= 0) {
                 bDisp.innerText = "Hết giờ!";
-                // Tự động chuyển giao diện sang trạng thái Khóa (Yêu cầu 2)
+                // Tự động chuyển giao diện sang trạng thái Khóa 
                 sB.className = "status-box locked";
                 sB.innerText = "Chuông: 🚫 Đã hết giờ";
             }
@@ -555,7 +575,6 @@
 
         const sortOption = document.querySelector('input[name="sortOption"]:checked').value;
 
-        // --- LOGIC: CHỈ LẤY ĐÁP ÁN CUỐI CÙNG (Yêu cầu 1) ---
         // Dùng Map để lưu đáp án mới nhất của từng user
         const latestAnswersMap = new Map();
 
@@ -600,7 +619,8 @@
         sorted.forEach(item => {
             const row = tblBuzzBody.insertRow();
             row.insertCell().innerText = item.name;
-            row.insertCell().innerText = formatTimeDisplay(item.created_at, buzzStartTime);
+            // *Đảm bảo sử dụng formatTimeDisplay với buzzStartTime*
+            row.insertCell().innerText = formatTimeDisplay(item.created_at, buzzStartTime); 
         });
     }
 
@@ -763,7 +783,6 @@
     document.getElementById("unlockAnswersPermanent").onclick = () => setAnswerState('open', 0);
     document.getElementById("lockAnswers").onclick = () => setAnswerState('locked');
     
-    // Yêu cầu 1: Reset đáp án không cần hộp thoại xác nhận. Mã gốc đã đáp ứng.
     document.getElementById("resetAnswers").onclick = async () => {
         await supabase.from('answers').delete().eq('room_code', currentRoom);
         answers = []; renderAnswers();
@@ -784,7 +803,6 @@
     document.getElementById("unlockBuzzPermanent").onclick = () => setBuzzState('open', 0);
     document.getElementById("lockBuzz").onclick = () => setBuzzState('locked');
     
-    // Yêu cầu 1: Reset chuông không cần hộp thoại xác nhận. Mã gốc đã đáp ứng.
     document.getElementById("resetBuzz").onclick = async () => {
         await supabase.from('buzzes').delete().eq('room_code', currentRoom);
         buzzOrder = []; renderBuzz();
