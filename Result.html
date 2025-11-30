@@ -89,7 +89,7 @@
                 .from('answers')
                 .select('*')
                 .eq('room_code', roomCode)
-                .order('created_at', { ascending: true }); // Lấy cũ đến mới
+                .order('created_at', { ascending: true }); 
 
             if (data) {
                 answers = data;
@@ -105,13 +105,18 @@
             }
 
             // --- LỌC DỮ LIỆU: Chỉ lấy đáp án mới nhất của mỗi người ---
-            const uniqueAnswers = {};
+            const latestAnswersMap = new Map();
             answers.forEach(item => {
-                // Do đã sort theo created_at tăng dần, nên cứ gán đè là sẽ được cái mới nhất
-                uniqueAnswers[item.name] = item;
+                const existing = latestAnswersMap.get(item.name);
+                // Dùng created_at để xác định câu trả lời mới nhất
+                if (!existing || new Date(item.created_at) > new Date(existing.created_at)) {
+                    latestAnswersMap.set(item.name, item);
+                }
             });
             // Chuyển về mảng và sắp xếp lại theo thời gian nộp
-            const sortedUnique = Object.values(uniqueAnswers).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            const sortedUnique = Array.from(latestAnswersMap.values())
+                                        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
 
             sortedUnique.forEach(item => {
                 const submitTime = new Date(item.created_at).getTime();

@@ -164,6 +164,9 @@
         let hasBuzzed = false;
         let answerInterval = null;
         let buzzInterval = null;
+        
+        // BIẾN QUAN TRỌNG: ĐỘ LỆCH GIỜ MÁY CHỦ (ServerTime - LocalTime)
+        let serverTimeOffset = 0; 
 
         const btnSend = document.getElementById("btnSend");
         const btnBuzz = document.getElementById("btnBuzz");
@@ -189,7 +192,6 @@
                 btnSend.classList.add("locked");
                 answerTextArea.classList.add("textarea-locked");
             } else {
-                // Khi mở, gỡ class locked để CSS hover hoạt động (Yêu cầu 3)
                 btnSend.classList.remove("locked");
                 answerTextArea.classList.remove("textarea-locked");
                 answerTextArea.focus();
@@ -202,11 +204,43 @@
                 btnBuzz.classList.add("locked");
                 btnBuzz.disabled = true;
             } else {
-                // Khi mở và chưa bấm, gỡ class locked để CSS hover hoạt động (Yêu cầu 3)
                 btnBuzz.classList.remove("locked");
                 btnBuzz.disabled = false;
             }
         }
+        
+        /**
+         * Hàm lấy thời gian máy chủ dự đoán
+         * ServerTime = LocalTime + serverTimeOffset
+         */
+        function getServerTimeNow() {
+            return Date.now() + serverTimeOffset;
+        }
+
+        /**
+         * Đồng bộ thời gian với server để sửa lỗi lệch 5s trên đồng hồ đếm ngược
+         * Sử dụng cách tạo 1 bản ghi ảo để lấy created_at làm giờ Server
+         */
+        async function syncServerTime() {
+            if (!myRoom) return;
+            const tempName = "SYNC_TIME_" + Math.random();
+            
+            // 1. Insert 1 dòng để lấy created_at từ server
+            const { data } = await supabase.from('participants')
+                .insert([{ room_code: myRoom, name: tempName, role: 'contestant' }])
+                .select('created_at')
+                .single();
+                
+            if (data) {
+                const serverTs = new Date(data.created_at).getTime();
+                const localTs = Date.now();
+                
+                // Tính độ lệch: Server - Local
+                serverTimeOffset = serverTs - localTs;
+            }
+            // Không cần xóa dòng tạm vì Contestant không có RLS Delete (tối ưu hoá)
+        }
+
 
         // --- XỬ LÝ ĐỒNG HỒ ĐẾM NGƯỢC ---
         function startTimer(elementId, startTimeISO, duration, callbackEnd) {
@@ -219,10 +253,14 @@
                 return;
             }
 
-            const endTime = new Date(startTimeISO).getTime() + (duration * 1000);
+            const startTime = new Date(startTimeISO).getTime();
+            const endTime = startTime + (duration * 1000);
 
             const interval = setInterval(() => {
-                const remain = endTime - Date.now();
+                // SỬA LỖI LỆCH GIỜ: Lấy thời gian Server ước tính
+                const currentServerTime = getServerTimeNow(); 
+                const remain = endTime - currentServerTime;
+
                 if (remain <= 0) {
                     clearInterval(interval);
                     el.innerText = "0.000s";
@@ -257,6 +295,9 @@
             roomCodeInput.disabled = true; nameInput.disabled = true; btnJoin.disabled = true;
             showPopup("Đã vào phòng " + code);
 
+            // Bổ sung: Đồng bộ thời gian ngay khi vào phòng
+            await syncServerTime();
+
             handleRoomUpdate(room);
 
             supabase.channel('room-updates')
@@ -283,6 +324,7 @@
             // Xử lý Đáp án
             if (roomData.answer_status === 'open') {
                 updateAnswerUI(false);
+                // Giờ đếm ngược sẽ chính xác
                 startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => {
                     updateAnswerUI(true);
                 });
@@ -294,14 +336,12 @@
 
             // Xử lý Chuông
             if (roomData.buzz_status === 'open') {
-                // BỔ SUNG FIX: Nếu trạng thái chuông chuyển từ KHÓA sang MỞ,
-                // reset trạng thái bấm chuông cục bộ để thí sinh có thể bấm lại.
-                // Điều này giúp contestant có thể bấm chuông 1 lần/1 lượt mở chuông.
                 if (lockedBuzz === true) {
                     hasBuzzed = false;
                 }
                 
                 updateBuzzUI(false);
+                // Giờ đếm ngược sẽ chính xác
                 startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
                     updateBuzzUI(true);
                 });
@@ -318,7 +358,7 @@
             const text = answerTextArea.value.trim();
             if (!text) return showPopup("Nhập đáp án!", "error");
 
-            // Logic lưu đáp án mới nhất (Host sẽ tự động lọc, ta chỉ cần insert)
+            // created_at được Supabase tự động tạo bằng giờ Server, nên thời gian ghi nhận là chính xác.
             const { error } = await supabase.from('answers').insert([
                 { room_code: myRoom, name: myName, answer_text: text }
             ]);
@@ -335,6 +375,7 @@
         btnBuzz.onclick = async () => {
             if (lockedBuzz || hasBuzzed) return;
 
+            // created_at được Supabase tự động tạo bằng giờ Server, nên thời gian ghi nhận là chính xác.
             const { error } = await supabase.from('buzzes').insert([
                 { room_code: myRoom, name: myName }
             ]);
