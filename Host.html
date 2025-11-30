@@ -669,18 +669,28 @@
       // 2. Listen Answers
         channel.on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` }, 
         (payload) => {
-            if (payload.eventType === 'INSERT') {
-                // SỬA LỖI: Thêm dữ liệu mới vào mảng answers trước khi render
-                answers.push(payload.new);
-                showPopup(`✅ ${payload.new.name} vừa gửi đáp án!`);
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                const newAnswer = payload.new;
+                
+                // Cập nhật/Thêm đáp án mới nhất vào mảng cục bộ
+                let found = false;
+                for (let i = 0; i < answers.length; i++) {
+                    // Nếu đã có đáp án của người này, xóa đáp án cũ đi
+                    if (answers[i].name === newAnswer.name) {
+                        answers[i] = newAnswer; // Thay thế bằng đáp án mới
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    answers.push(newAnswer); // Thêm nếu là đáp án đầu tiên
+                }
+                
                 renderAnswers();
+                showPopup(`✅ ${newAnswer.name} vừa gửi đáp án!`);
             } else if (payload.eventType === 'DELETE') {
-                // Logic xóa đáp án khi Host/Manager reset
                 if (payload.old.id) {
                      answers = answers.filter(a => a.id !== payload.old.id);
-                     renderAnswers();
-                } else {
-                     answers = [];
                      renderAnswers();
                 }
             }

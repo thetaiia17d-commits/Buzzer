@@ -311,18 +311,21 @@
 
         // --- GỬI ĐÁP ÁN ---
         btnSend.onclick = async () => {
-            if (lockedAnswer) return showPopup("Đang khóa!", "error");
+            // Chỉ cần check nếu Host đã khóa
+            if (lockedAnswer) return showPopup("Đang khóa! Không thể gửi đáp án.", "error"); 
+            
             const text = answerTextArea.value.trim();
             if (!text) return showPopup("Nhập đáp án!", "error");
 
+            // Logic: Gửi đáp án mới. Supabase sẽ tạo ra `created_at` timestamp.
             const { error } = await supabase.from('answers').insert([
                 { room_code: myRoom, name: myName, answer_text: text }
             ]);
 
             if (error) showPopup("Lỗi gửi: " + error.message, "error");
             else {
-                showPopup("Đã gửi!");
-                answerTextArea.value = "";
+                showPopup("Đã gửi đáp án thành công!");
+                answerTextArea.value = ""; 
                 answerTextArea.focus();
             }
         };
