@@ -54,7 +54,7 @@
         const roomStatus = document.getElementById('roomStatus');
 
         let answers = [];
-        let roomStartTime = null; // Cần lấy thời gian mở khóa để tính giây
+        let roomStartTime = null; 
 
         async function init() {
             if (!roomCode) {
@@ -63,33 +63,28 @@
             }
             roomStatus.innerText = "Phòng: " + roomCode;
 
-            // 1. Lấy thông tin phòng để biết mốc thời gian (answer_open_time)
             const { data: room } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
             if (room) roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
 
-            // 2. Lấy danh sách đáp án hiện tại
             await fetchAndRender();
 
-            // 3. Lắng nghe thay đổi (Có ai gửi đáp án mới)
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
-                    () => { fetchAndRender(); }) // Reload khi có thay đổi
+                    () => { fetchAndRender(); }) 
                 .subscribe();
 
-            // 4. Lắng nghe thay đổi phòng (nếu Host reset giờ -> cập nhật lại mốc tính giờ)
             supabase.channel('room_channel')
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
                     (payload) => {
                         if (payload.new.answer_open_time) {
                             roomStartTime = new Date(payload.new.answer_open_time).getTime();
-                            render(); // Re-render để tính lại giây
+                            render(); 
                         }
                     })
                 .subscribe();
         }
 
         async function fetchAndRender() {
-            // Lấy tất cả đáp án, sắp xếp theo thời gian tạo
             const { data, error } = await supabase
                 .from('answers')
                 .select('*')
@@ -109,10 +104,20 @@
                 return;
             }
 
-            // Group by User: Chỉ lấy câu trả lời mới nhất của mỗi người (hoặc hiển thị hết tùy logic)
-            // Logic ở đây: Hiển thị hết theo thứ tự thời gian
-
+            // --- FIX: CHỈ LẤY ĐÁP ÁN MỚI NHẤT ---
+            const uniqueAnswers = {};
             answers.forEach(item => {
+                // Nếu chưa có trong map hoặc item hiện tại mới hơn cái đã lưu
+                if (!uniqueAnswers[item.name] || new Date(item.created_at) > new Date(uniqueAnswers[item.name].created_at)) {
+                    uniqueAnswers[item.name] = item;
+                }
+            });
+
+            // Chuyển về mảng và sắp xếp theo thời gian nộp
+            const sortedUnique = Object.values(uniqueAnswers).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            // -------------------------------------
+
+            sortedUnique.forEach(item => {
                 const submitTime = new Date(item.created_at).getTime();
                 let diff = 0;
                 if (roomStartTime && submitTime > roomStartTime) {
