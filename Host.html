@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>Host Panel</title>
+  <title>Host Panel (Supabase)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -428,9 +428,11 @@
 
 <script>
     // --- CẤU HÌNH SUPABASE ---
-    var SUPABASE_URL = "https://rsvggeknetiacezwvgxy.supabase.co";
-    var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmdnZWtuZXRpYWNlend2Z3h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0OTI0NzksImV4cCI6MjA4MDA2ODQ3OX0.mkrHJaOA2axmVx8o5M0AOoyiVdmIFyNdQMiQahSvdEU";
-    var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    var SUPABASE_URL = "YOUR_SUPABASE_URL";
+    var SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
+    
+    // FIX LỖI: Sử dụng window.supabase để tránh lỗi "Cannot access 'supabase' before initialization"
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // --- VARIABLES ---
     let currentRoom = null;
@@ -498,6 +500,21 @@
         sB.className = lockedBuzz ? "status-box locked" : "status-box open";
         sB.innerText = lockedBuzz ? "Chuông: 🚫 Đang khóa" : "Chuông: 🔔 Đang mở";
     }
+    
+    // Hàm mới: Tự động khóa trạng thái trong DB khi hết giờ
+    async function autoLock(type) {
+        if (!currentRoom) return;
+        const updates = {};
+        if (type === 'answer' && !lockedAnswer) {
+            updates.answer_status = 'locked';
+            // Dùng UPDATE kèm điều kiện để tránh các lệnh UPDATE không cần thiết
+            await supabase.from('rooms').update(updates).eq('room_code', currentRoom).eq('answer_status', 'open');
+        } else if (type === 'buzz' && !lockedBuzz) {
+            updates.buzz_status = 'locked';
+            await supabase.from('rooms').update(updates).eq('room_code', currentRoom).eq('buzz_status', 'open');
+        }
+    }
+
 
     // Loop cập nhật đồng hồ đếm ngược trên màn hình Host
     setInterval(() => {
@@ -507,16 +524,26 @@
 
         if (!lockedAnswer && answerDurationLimit > 0 && answerEndTime > 0) {
             const remain = answerEndTime - now;
-            if (remain <= 0) aDisp.innerText = "Hết giờ!";
-            else aDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+            if (remain <= 0) {
+                aDisp.innerText = "Hết giờ!";
+                // TỰ ĐỘNG KHÓA ĐÁP ÁN
+                autoLock('answer'); 
+            } else {
+                aDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+            }
         } else {
             aDisp.innerText = "";
         }
 
         if (!lockedBuzz && buzzDurationLimit > 0 && buzzEndTime > 0) {
             const remain = buzzEndTime - now;
-            if (remain <= 0) bDisp.innerText = "Hết giờ!";
-            else bDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+            if (remain <= 0) {
+                bDisp.innerText = "Hết giờ!";
+                // TỰ ĐỘNG KHÓA CHUÔNG
+                autoLock('buzz');
+            } else {
+                bDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+            }
         } else {
             bDisp.innerText = "";
         }
@@ -526,16 +553,26 @@
     function renderAnswers() {
       tblAnswersBody.innerHTML = "";
       
-      const sortOption = document.querySelector('input[name="sortOption"]:checked').value;
+      // 1. Lọc: Chỉ giữ lại đáp án cuối cùng của mỗi thí sinh (Mới nhất)
+      const latestAnswersMap = new Map();
       
-      // Clone array để sort
-      let displayData = [...answers];
+      // Sắp xếp mảng `answers` theo thời gian tăng dần để đảm bảo Map.set() sẽ ghi đè lên
+      // và giữ lại bản ghi có created_at lớn nhất (mới nhất)
+      const sortedByTime = [...answers].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      sortedByTime.forEach(item => {
+        latestAnswersMap.set(item.name, item); 
+      });
+
+      let displayData = Array.from(latestAnswersMap.values());
+      
+      const sortOption = document.querySelector('input[name="sortOption"]:checked').value;
 
       if (sortOption === "time") {
+          // Sort các đáp án mới nhất theo thời gian trả lời của chúng
           displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       } else {
-          // Sort theo thứ tự join (dựa vào mảng allParticipants lấy từ DB)
-          // Tạo map index
+          // Sort theo thứ tự join
           const orderMap = {};
           allParticipants.forEach((p, idx) => orderMap[p.name] = idx);
           
@@ -552,10 +589,6 @@
         row.insertCell().innerText = item.answer_text;
         row.insertCell().innerText = formatTimeDisplay(item.created_at, answerStartTime);
       });
-      
-      // Cập nhật config sort cho Viewer (nếu cần sync realtime thì phải có bảng settings, 
-      // nhưng ở version Supabase này Viewer tự sort hoặc Host push event. 
-      // Để đơn giản ta bỏ qua bước sync sort config realtime phức tạp)
     }
 
     function renderBuzz() {
@@ -668,16 +701,14 @@
                 answers.push(payload.new);
                 renderAnswers();
             } else if (payload.eventType === 'DELETE') {
-                // Nếu xóa hết (Reset) -> API trả về payload old là id. Nhưng DELETE all thường dùng câu lệnh SQL. 
-                // Supabase realtime delete trả về row bị xóa. Nếu reset all -> Client nên clear all.
-                // Tuy nhiên, logic đơn giản: cứ có delete thì fetch lại hoặc clear list nếu nhận thấy reset.
-                // Ở đây để đơn giản: khi bấm nút reset -> host clear mảng. 
-                // Nhưng nếu manager khác bấm reset -> ta cần biết.
-                // Tạm thời: Nếu nhận delete event -> tìm id xóa khỏi mảng.
                 if (payload.old.id) {
                      answers = answers.filter(a => a.id !== payload.old.id);
                      renderAnswers();
                 }
+            } else if (payload.eventType === 'DELETE' && !payload.old.id) {
+                 // Giả định là reset toàn bộ khi không có id cũ
+                 answers = []; 
+                 renderAnswers();
             }
         });
 
@@ -693,6 +724,9 @@
                     buzzOrder = buzzOrder.filter(b => b.id !== payload.old.id);
                     renderBuzz();
                 }
+            } else if (payload.eventType === 'DELETE' && !payload.old.id) {
+                buzzOrder = [];
+                renderBuzz();
             }
         });
         
@@ -878,11 +912,18 @@
     document.getElementById("btnExportResults").onclick = () => {
         if (!currentRoom) return;
         const wb = XLSX.utils.book_new();
+        
+        // 1. Lọc đáp án mới nhất cho Export
+        const latestAnswersMap = new Map();
+        [...answers].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).forEach(item => {
+            latestAnswersMap.set(item.name, item); 
+        });
+        const latestAnswers = Array.from(latestAnswersMap.values());
 
         // Sheet 1: Đáp án
         const wsData1 = [["Tên", "Đáp án", "Thời gian (s)"]];
         // Sort answers by time for export
-        const sortedAns = [...answers].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+        const sortedAns = [...latestAnswers].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
         sortedAns.forEach(a => {
             wsData1.push([a.name, a.answer_text, formatTimeDisplay(a.created_at, answerStartTime)]);
         });
