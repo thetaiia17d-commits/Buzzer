@@ -667,23 +667,23 @@
         });
 
       // 2. Listen Answers
-      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` }, 
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            answers.push(payload.new);
-            renderAnswers();
-          } else if (payload.eventType === 'DELETE') {
-            // Nếu xóa hết (Reset) -> API trả về payload old là id. Nhưng DELETE all thường dùng câu lệnh SQL. 
-            // Supabase realtime delete trả về row bị xóa. Nếu reset all -> Client nên clear all.
-            // Tuy nhiên, logic đơn giản: cứ có delete thì fetch lại hoặc clear list nếu nhận thấy reset.
-            // Ở đây để đơn giản: khi bấm nút reset -> host clear mảng. 
-            // Nhưng nếu manager khác bấm reset -> ta cần biết.
-            // Tạm thời: Nếu nhận delete event -> tìm id xóa khỏi mảng.
-            if (payload.old.id) {
-              answers = answers.filter(a => a.id !== payload.old.id);
-              renderAnswers();
+            if (payload.eventType === 'INSERT') {
+                // SỬA LỖI: Thêm dữ liệu mới vào mảng answers trước khi render
+                answers.push(payload.new);
+                showPopup(`✅ ${payload.new.name} vừa gửi đáp án!`);
+                renderAnswers();
+            } else if (payload.eventType === 'DELETE') {
+                // Logic xóa đáp án khi Host/Manager reset
+                if (payload.old.id) {
+                     answers = answers.filter(a => a.id !== payload.old.id);
+                     renderAnswers();
+                } else {
+                     answers = [];
+                     renderAnswers();
+                }
             }
-          }
         });
 
       // 3. Listen Buzz
