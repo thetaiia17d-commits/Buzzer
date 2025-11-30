@@ -166,7 +166,7 @@
     let buzzInterval = null;
     let roomChannel = null;
 
-    // BIẾN QUAN TRỌNG: ĐỘ LỆCH GIỜ MÁY CHỦ (ServerTime - LocalTime)
+    // BIẾN QUAN TRỌNG: ĐỘ LỆCH GIỜ MÁY CHỦ
     let serverTimeOffset = 0;
 
     const btnSend = document.getElementById("btnSend");
@@ -276,7 +276,6 @@
       if (elementId === 'buzzCountdown') buzzInterval = interval;
     }
 
-
     // --- THAM GIA PHÒNG ---
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
@@ -289,7 +288,7 @@
       const { data: room, error } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (error || !room) return showPopup("Phòng không tồn tại!", "error");
       
-      // KIỂM TRA TRÙNG TÊN TRƯỚC KHI VÀO
+      // VALIDATE: Kiểm tra trùng tên trước khi vào
       const isExist = await checkUserExists(code, name);
       if (isExist) return showPopup("Tên đã được sử dụng trong phòng này!", "error");
 
@@ -329,10 +328,10 @@
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, 
           () => { hasBuzzed = false; updateBuzzUI(lockedBuzz); showPopup("Host đã reset chuông!"); })
         
-        // --- TỰ ĐỘNG RESET NẾU BỊ XÓA KHỎI DANH SÁCH ---
-        // Trường hợp: Mất mạng, Host xóa tên. Khi có mạng lại, nhận sự kiện DELETE tên mình -> Reload trang.
+        // --- LOGIC TỰ ĐỘNG RESET NẾU TÊN MÌNH BỊ XÓA (Do mất kết nối hoặc bị Host kick) ---
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'participants', filter: `room_code=eq.${myRoom}` }, 
           (payload) => {
+             // Nếu dòng bị xóa có tên trùng với tên mình
              if (payload.old.name === myName) {
                  alert("Bạn đã bị ngắt kết nối hoặc bị mời ra khỏi phòng.");
                  location.reload(); // Reset lại trang
@@ -341,7 +340,7 @@
           
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
-                // QUAN TRỌNG: Gửi tín hiệu Presence để Host biết mình còn sống
+                // Gửi tín hiệu Presence để Host biết mình còn online
                 await roomChannel.track({
                     name: myName,
                     role: 'contestant',

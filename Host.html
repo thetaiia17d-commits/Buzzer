@@ -487,13 +487,21 @@
       return new Date(estimatedServerTime).toISOString();
     }
 
-    // --- HÀM VALIDATE TRÙNG TÊN ---
+    function formatTimeDisplay(isoDate, startTime) {
+      if (!startTime || !isoDate) return "N/A";
+      const ts = new Date(isoDate).getTime();
+      let diff = ts - startTime;
+      if (diff < 0) diff = 0;
+      return (diff / 1000).toFixed(3) + "s";
+    }
+    
+    // --- HÀM CHECK TRÙNG TÊN ---
     async function checkUserExists(roomCode, name) {
       const { data, error } = await supabase
         .from('participants')
         .select('id')
         .eq('room_code', roomCode)
-        .eq('name', name); // Không dùng .single() để tránh lỗi nếu trả về 0 dòng
+        .eq('name', name);
       
       if (error) return false; 
       return data && data.length > 0;
@@ -510,16 +518,9 @@
         const serverTs = new Date(data.created_at).getTime();
         const localTs = Date.now();
         serverTimeOffset = serverTs - localTs;
+        // Xóa ngay lập tức
         await supabase.from('participants').delete().eq('id', data.id);
       }
-    }
-
-    function formatTimeDisplay(isoDate, startTime) {
-      if (!startTime || !isoDate) return "N/A";
-      const ts = new Date(isoDate).getTime();
-      let diff = ts - startTime;
-      if (diff < 0) diff = 0;
-      return (diff / 1000).toFixed(3) + "s";
     }
 
     // --- LOGIC HIỂN THỊ ---
@@ -625,7 +626,7 @@
       }]);
       if (error) return showPopup("Lỗi tạo phòng: " + error.message, "error");
       
-      // Host tự thêm mình vào list, Host không cần check trùng vì Host là người đầu tiên
+      // Host tự thêm mình
       await supabase.from('participants').insert([{
         room_code: code,
         name: "Host",
@@ -652,7 +653,7 @@
       const { data: room } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (!room) return showPopup("Phòng không tồn tại", "error");
 
-      // Validate trùng tên
+      // Check trùng tên
       const isExist = await checkUserExists(code, name);
       if (isExist) return showPopup("Tên này đã có người sử dụng!", "error");
       
@@ -694,12 +695,23 @@
       fetchUsers();
     }
 
+    // --- SỬA LỖI: Lọc bỏ tên SYNC_TIME_ và Cập nhật danh sách ngay lập tức ---
     async function fetchUsers() {
-      const { data } = await supabase.from('participants').select('*').eq('room_code', currentRoom).order('created_at', { ascending: true });
-      if (data) allParticipants = data;
+      const { data } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('room_code', currentRoom)
+        .order('created_at', { ascending: true });
+        
+      if (data) {
+        // LỌC DỮ LIỆU: Chỉ lấy user có tên KHÔNG bắt đầu bằng "SYNC_TIME_"
+        allParticipants = data.filter(u => !u.name.startsWith("SYNC_TIME_"));
+        
+        // Vẽ lại UI ngay lập tức
+        renderUserListPopup();
+      }
     }
 
-    // --- LOGIC XỬ LÝ REALTIME VÀ TỰ ĐỘNG XÓA ---
     function subscribeRealtime() {
       if (roomChannel) supabase.removeChannel(roomChannel);
 
@@ -720,16 +732,13 @@
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` }, (payload) => {
-            fetchUsers(); // Cập nhật lại danh sách khi có thay đổi trong DB
+            fetchUsers(); 
         })
-        // --- XỬ LÝ TRẠNG THÁI PRESENCE (RỜI PHÒNG) ---
+        // --- XỬ LÝ RỜI PHÒNG ---
         .on('presence', { event: 'leave' }, async ({ leftPresences }) => {
-            // Chỉ Host mới thực hiện quyền xóa để tránh nhiều người xóa cùng lúc
             if (myRole === 'host') {
                 for (const user of leftPresences) {
-                    // Kiểm tra user hợp lệ và không xóa chính mình (phòng hờ)
                     if (user.name && user.name !== myName) {
-                        // Xóa khỏi DB. Việc này sẽ trigger sự kiện postgres_changes -> cập nhật UI cho mọi người
                         console.log("Phát hiện rời phòng/mất kết nối: ", user.name);
                         await supabase.from('participants').delete()
                             .eq('room_code', currentRoom)
@@ -742,8 +751,6 @@
         })
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
-                // Host/Manager cũng phải track sự hiện diện của chính mình
-                // Để nếu Manager rời thì Host biết mà xóa
                 await roomChannel.track({
                     name: myName,
                     role: myRole,
@@ -854,11 +861,8 @@
       const baseTime = type === 'answer' ? answerStartTime : buzzStartTime;
       const refTime = baseTime > 0 ? baseTime : (Date.now() + serverTimeOffset);
 
-      // Validate trước khi insert
       for (const row of rows) {
           const name = row.querySelector(".add-input-name").value.trim();
-          // Với Bổ sung thủ công, có thể không cần check trùng tên thí sinh, nhưng nếu muốn chặt chẽ thì thêm checkUserExists vào đây.
-          // Tuy nhiên, thường host bổ sung đáp án cho thí sinh đã có, nên ở đây ta tạm bỏ qua check trùng để host linh động.
           const delay = parseFloat(row.querySelector(".add-input-time").value) || 0;
           const created_at = new Date(refTime + delay * 1000).toISOString();
 
@@ -893,15 +897,21 @@
 
     function renderUserListPopup() {
       const ul = document.querySelector("#userListContainer ul");
+      if (!ul) return; 
       ul.innerHTML = "";
       const roleOrder = { 'host': 1, 'manager': 2, 'contestant': 3 };
       const sortedUsers = [...allParticipants].sort((a, b) => (roleOrder[a.role] || 4) - (roleOrder[b.role] || 4));
-      sortedUsers.forEach(u => {
-        const li = document.createElement("li");
-        let roleSpan = u.role === 'host' ? '<span class="role-host">(Host)</span>' : u.role === 'manager' ? '<span class="role-manager">(Quản lý)</span>' : '<span class="role-contestant">(Thí sinh)</span>';
-        li.innerHTML = `<b>${u.name}</b> ${roleSpan}`;
-        ul.appendChild(li);
-      });
+      
+      if (sortedUsers.length === 0) {
+          ul.innerHTML = "<li>(Trống)</li>";
+      } else {
+          sortedUsers.forEach(u => {
+            const li = document.createElement("li");
+            let roleSpan = u.role === 'host' ? '<span class="role-host">(Host)</span>' : u.role === 'manager' ? '<span class="role-manager">(Quản lý)</span>' : '<span class="role-contestant">(Thí sinh)</span>';
+            li.innerHTML = `<b>${u.name}</b> ${roleSpan}`;
+            ul.appendChild(li);
+          });
+      }
     }
 
     document.getElementById("btnExportResults").onclick = () => {
