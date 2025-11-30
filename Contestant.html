@@ -150,7 +150,7 @@
         var SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
 
         // FIX LỖI: Sử dụng window.supabase để tránh lỗi "Cannot access 'supabase' before initialization"
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // --- VARIABLES ---
         let myRoom = null;
