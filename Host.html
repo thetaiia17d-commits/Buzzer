@@ -747,6 +747,9 @@
             } else {
                 answerEndTime = 0;
             }
+        } else {
+            // Khi khóa, đặt lại thời gian bắt đầu về 0 để tránh tính toán sai cho lần mở tiếp theo
+            answerStartTime = 0;
         }
 
         // Buzz Status
@@ -759,6 +762,9 @@
             } else {
                 buzzEndTime = 0;
             }
+        } else {
+            // Khi khóa, đặt lại thời gian bắt đầu về 0
+            buzzStartTime = 0;
         }
 
         updateUI();
