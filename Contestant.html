@@ -189,7 +189,7 @@
                 btnSend.classList.add("locked");
                 answerTextArea.classList.add("textarea-locked");
             } else {
-                // Khi mở, gỡ class locked để CSS hover hoạt động
+                // Khi mở, gỡ class locked để CSS hover hoạt động (Yêu cầu 3)
                 btnSend.classList.remove("locked");
                 answerTextArea.classList.remove("textarea-locked");
                 answerTextArea.focus();
@@ -202,7 +202,7 @@
                 btnBuzz.classList.add("locked");
                 btnBuzz.disabled = true;
             } else {
-                // Khi mở và chưa bấm, gỡ class locked để CSS hover hoạt động
+                // Khi mở và chưa bấm, gỡ class locked để CSS hover hoạt động (Yêu cầu 3)
                 btnBuzz.classList.remove("locked");
                 btnBuzz.disabled = false;
             }
@@ -311,6 +311,7 @@
             const text = answerTextArea.value.trim();
             if (!text) return showPopup("Nhập đáp án!", "error");
 
+            // Logic lưu đáp án mới nhất (Host sẽ tự động lọc, ta chỉ cần insert)
             const { error } = await supabase.from('answers').insert([
                 { room_code: myRoom, name: myName, answer_text: text }
             ]);
