@@ -762,8 +762,9 @@
     document.getElementById("unlockAnswersLimited").onclick = () => setAnswerState('open', parseInt(answerDurationInput.value) || 30);
     document.getElementById("unlockAnswersPermanent").onclick = () => setAnswerState('open', 0);
     document.getElementById("lockAnswers").onclick = () => setAnswerState('locked');
+    
+    // Yêu cầu 1: Reset đáp án không cần hộp thoại xác nhận. Mã gốc đã đáp ứng.
     document.getElementById("resetAnswers").onclick = async () => {
-        // Đã bỏ confirm
         await supabase.from('answers').delete().eq('room_code', currentRoom);
         answers = []; renderAnswers();
         showPopup("Đã reset toàn bộ đáp án!");
@@ -782,8 +783,9 @@
     document.getElementById("unlockBuzzLimited").onclick = () => setBuzzState('open', parseInt(buzzDurationInput.value) || 5);
     document.getElementById("unlockBuzzPermanent").onclick = () => setBuzzState('open', 0);
     document.getElementById("lockBuzz").onclick = () => setBuzzState('locked');
+    
+    // Yêu cầu 1: Reset chuông không cần hộp thoại xác nhận. Mã gốc đã đáp ứng.
     document.getElementById("resetBuzz").onclick = async () => {
-        // Đã bỏ confirm
         await supabase.from('buzzes').delete().eq('room_code', currentRoom);
         buzzOrder = []; renderBuzz();
         showPopup("Đã reset toàn bộ chuông!");

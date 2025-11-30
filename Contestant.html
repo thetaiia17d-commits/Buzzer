@@ -294,6 +294,13 @@
 
             // Xử lý Chuông
             if (roomData.buzz_status === 'open') {
+                // BỔ SUNG FIX: Nếu trạng thái chuông chuyển từ KHÓA sang MỞ,
+                // reset trạng thái bấm chuông cục bộ để thí sinh có thể bấm lại.
+                // Điều này giúp contestant có thể bấm chuông 1 lần/1 lượt mở chuông.
+                if (lockedBuzz === true) {
+                    hasBuzzed = false;
+                }
+                
                 updateBuzzUI(false);
                 startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
                     updateBuzzUI(true);
