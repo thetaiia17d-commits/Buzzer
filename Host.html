@@ -491,15 +491,11 @@
         // Tính toán sự khác biệt
         let diff = ts - startTime; 
         
-        // --- CHỈNH SỬA: Bổ sung logic kiểm tra nếu thời gian bấm xảy ra trước khi mở ---
-        // Do chênh lệch đồng hồ giữa Host và Database/Contestant, nếu diff quá nhỏ (ví dụ < -1s)
-        // thì có thể là do chênh lệch đồng hồ. Ta sẽ cho là 0 hoặc N/A.
-        // Tuy nhiên, để giữ tính toán thời gian trôi qua, ta chỉ đảm bảo nó không âm.
+        // --- SỬA LỖI HIỂN THỊ THỜI GIAN ÂM HOẶC LỖI CHÊNH LỆCH ĐỒNG HỒ ---
+        // Nếu thời gian bấm chuông (ts) nhỏ hơn thời gian mở (startTime),
+        // nghĩa là có chênh lệch đồng hồ và thời gian bấm thực tế phải là 0s (tức là bấm ngay khi mở).
         if (diff < 0) {
-            // Đây là trường hợp thời gian bấm chuông nhỏ hơn thời gian mở chuông được ghi nhận trên máy Host.
-            // Điều này thường xảy ra do độ trễ mạng hoặc chênh lệch đồng hồ.
-            // Trả về N/A hoặc 0.000s để tránh số âm.
-             return "0.000s (Delay)"; // Ghi chú thêm để dễ debug.
+             diff = 0; // Đặt về 0ms để tránh hiển thị thời gian âm.
         }
         
         // Trả về kết quả chính xác
