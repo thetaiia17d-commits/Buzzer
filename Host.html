@@ -817,13 +817,15 @@
       lockedAnswer = room.answer_status === 'locked';
       lockedBuzz = room.buzz_status === 'locked';
 
-      // SỬA: Xử lý khi Host/Manager khác bấm Reset
+      // Sửa Logic Xử lý Reset trên các máy Host/Manager khác (Non-Clicker)
       if (!room.answer_open_time) {
         answerStartTime = 0;
         answerDurationLimit = 0;
         answerEndTime = 0;
         answers = []; // Xóa dữ liệu cục bộ
         renderAnswers(); // Render lại để xóa bảng
+        // **THÊM:** Buộc fetch lại data ngay lập tức để đảm bảo đồng bộ với DB (đã trống)
+        fetchAnswers(); 
       } else {
         answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
         answerDurationLimit = room.answer_duration || 0;
@@ -836,6 +838,8 @@
         buzzEndTime = 0;
         buzzOrder = []; // Xóa dữ liệu cục bộ
         renderBuzz(); // Render lại để xóa bảng
+        // **THÊM:** Buộc fetch lại data ngay lập tức để đảm bảo đồng bộ với DB (đã trống)
+        fetchBuzz();
       } else {
         buzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
         buzzDurationLimit = room.buzz_duration || 0;
@@ -981,7 +985,7 @@
       let errorMsg = isAnswer ? "Lỗi reset đáp án!" : "Lỗi reset chuông!";
 
       // BƯỚC 1: CẬP NHẬT TRẠNG THÁI PHÒNG VÀ RESET THỜI GIAN
-      // Việc đặt answer_open_time = null ở đây sẽ gửi tín hiệu realtime cho tất cả Host/Manager khác và Result.html
+      // Việc đặt *open_time = null ở đây sẽ gửi tín hiệu realtime cho tất cả Host/Manager khác và Result.html
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
       if (roomError) return showPopup(errorMsg + " (Lỗi cập nhật phòng)", "error");
 
@@ -991,7 +995,7 @@
       if (dataError) {
         showPopup(errorMsg + " (Lỗi xóa dữ liệu)", "error");
       } else {
-        // Cập nhật trạng thái cục bộ ngay lập tức (Realtime sẽ cập nhật các máy khác)
+        // Cập nhật trạng thái cục bộ ngay lập tức (Máy của người bấm nút)
         if (isAnswer) {
           answers = [];
           answerStartTime = 0;
