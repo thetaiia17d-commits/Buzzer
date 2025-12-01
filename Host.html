@@ -933,7 +933,7 @@
 
       if (status === 'open') {
         // --- SỬA ĐỔI: Bù trừ độ trễ mạng 500ms (0.5s) ---
-        const estimatedServerTime = Date.now() + serverTimeOffset + 500;
+        const estimatedServerTime = Date.now() + serverTimeOffset + 1000;
         const compensatedNowISO = new Date(estimatedServerTime).toISOString();
 
         updateData[timeField] = compensatedNowISO; // Sử dụng thời gian đã bù trừ
@@ -972,7 +972,7 @@
         if (isPermanent) {
           // YÊU CẦU: Nếu đang Mở Vĩnh Viễn, giữ trạng thái 'open', cập nhật thời gian bắt đầu mới.
           // SỬA ĐỔI: Bù trừ độ trễ mạng 500ms (0.5s) cho thời gian bắt đầu mới.
-          const estimatedServerTime = Date.now() + serverTimeOffset + 500;
+          const estimatedServerTime = Date.now() + serverTimeOffset + 1000;
           const compensatedNowISO = new Date(estimatedServerTime).toISOString();
           
           roomUpdate = {
