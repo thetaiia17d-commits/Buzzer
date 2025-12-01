@@ -5,7 +5,12 @@
     <meta charset="UTF-8">
     <title>Kết Quả</title>
     <style>
-        /* ... (Giữ nguyên CSS) ... */
+        body {
+            background-color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            font-weight: bold;
+        }
 
         #headerContainer {
             margin-bottom: 20px;
@@ -28,75 +33,135 @@
             font-size: 1.2em;
         }
 
+        /* Bổ sung CSS cho phần sắp xếp để đảm bảo tính ổn định và đúng font */
         #sortOptions {
             font-family: Arial, sans-serif;
             margin-bottom: 10px;
             font-weight: bold;
+            /* Chữ đậm */
             text-align: center;
             color: black;
             display: flex;
             justify-content: center;
-            gap: 20px;
+            gap: 30px;
         }
+
+        #sortOptions label {
+            cursor: pointer;
+        }
+
+        /* Kết thúc CSS bổ sung */
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 
 <body>
     <div id="headerContainer">
-        <h1>BẢNG KẾT QUẢ ĐÁP ÁN</h1>
-        <div id="roomInfo"></div>
+        <h2 style="margin: 0;">Kết quả</h2>
+        <span id="roomStatus" style="color: blue;">Đang kết nối...</span>
     </div>
 
     <div id="sortOptions">
-        <label style="cursor: pointer;">
-            <input type="radio" name="sortOption" value="join" onchange="renderResults()"> Theo thứ tự vào phòng
+        <label>
+            <input type="radio" name="sortOption" value="join" onchange="render()"> Theo thứ tự vào phòng
         </label>
-        <label style="cursor: pointer;">
-            <input type="radio" name="sortOption" value="time" checked onchange="renderResults()"> Theo thời gian trả lời
+        <label>
+            <input type="radio" name="sortOption" value="time" checked onchange="render()"> Theo thời gian trả lời
         </label>
     </div>
-
-    <div id="resultsContainer">
-        </div>
+    <div id="resultsContainer">Đang tải...</div>
 
     <script>
-        // --- CẤU HÌNH SUPABASE ---
         var SUPABASE_URL = "https://rsvggeknetiacezwvgxy.supabase.co";
         var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmdnZWtuZXRpYWNlend2Z3h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0OTI0NzksImV4cCI6MjA4MDA2ODQ3OX0.mkrHJaOA2axmVx8o5M0AOoyiVdmIFyNdQMiQahSvdEU";
         var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // --- VARIABLES ---
-        let myRoom = null;
-        let answers = [];
-        let allParticipants = [];
-        let roomStartTime = 0; // Thời gian Host mở đáp án (answer_open_time)
-        
-        // Kênh realtime
-        let roomChannel = null;
-        let answersChannel = null; // SỬA: Thêm biến cho kênh answers
-        let participantsChannel = null; // SỬA: Thêm biến cho kênh participants
+        const params = new URLSearchParams(window.location.search);
+        const roomCode = params.get('roomid');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const roomStatus = document.getElementById('roomStatus');
 
-        // --- UTILS ---
-        function getQueryVariable(variable) {
-            const query = window.location.search.substring(1);
-            const vars = query.split('&');
-            for (let i = 0; i < vars.length; i++) {
-                const pair = vars[i].split('=');
-                if (decodeURIComponent(pair[0]) == variable) {
-                    return decodeURIComponent(pair[1]);
-                }
+        let answers = [];
+        let roomStartTime = null;
+        let allParticipants = [];
+
+        async function init() {
+            if (!roomCode) {
+                resultsContainer.innerHTML = "Thiếu ?roomid=XXXXXX trên URL";
+                return;
             }
-            return null;
+            roomStatus.innerText = "Phòng: " + roomCode;
+
+            await fetchParticipants();
+
+            const { data: room } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
+            if (room) {
+                roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+            }
+
+            await fetchAndRender();
+
+            // Đăng ký realtime cho answers
+            supabase.channel('answers_channel')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
+                    () => { fetchAndRender(); })
+                .subscribe();
+
+            // Đăng ký realtime cho rooms (Đã sửa để bắt cả trường hợp answer_open_time bị reset thành null)
+            supabase.channel('room_channel')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
+                    (payload) => {
+                        if ('answer_open_time' in payload.new) {
+                            if (payload.new.answer_open_time) {
+                                roomStartTime = new Date(payload.new.answer_open_time).getTime();
+                            } else {
+                                // SỬA: Xử lý Reset (answer_open_time = null)
+                                roomStartTime = 0; // Reset thời gian bắt đầu
+                                answers = []; // **QUAN TRỌNG: Xóa dữ liệu cục bộ ngay lập tức**
+                            }
+                            render();
+                        }
+                    })
+                .subscribe();
+
+            // Đăng ký realtime cho participants
+            supabase.channel('participants_channel')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${roomCode}` },
+                    () => { fetchParticipants().then(render); })
+                .subscribe();
         }
 
-        // --- RENDER FUNCTIONS ---
-        function renderResults() {
-            const container = document.getElementById('resultsContainer');
-            if (!container) return;
-            container.innerHTML = "";
+        async function fetchParticipants() {
+            const { data } = await supabase
+                .from('participants')
+                .select('name')
+                .eq('room_code', roomCode)
+                .order('created_at', { ascending: true });
 
-            // Lọc ra đáp án mới nhất của mỗi thí sinh
+            if (data) {
+                allParticipants = data.filter(p => !p.name.startsWith("SYNC_TIME_"));
+            }
+        }
+
+        async function fetchAndRender() {
+            const { data, error } = await supabase
+                .from('answers')
+                .select('*')
+                .eq('room_code', roomCode);
+
+            if (data) {
+                answers = data;
+                render();
+            }
+        }
+
+        function render() {
+            resultsContainer.innerHTML = '';
+            if (answers.length === 0) {
+                resultsContainer.innerHTML = '<p style="text-align:center">Chưa có dữ liệu</p>';
+                return;
+            }
+
             const latestAnswersMap = new Map();
             answers.forEach(item => {
                 const existing = latestAnswersMap.get(item.name);
@@ -104,26 +169,21 @@
                     latestAnswersMap.set(item.name, item);
                 }
             });
+
             let displayData = Array.from(latestAnswersMap.values());
 
             const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
 
-            // Sắp xếp dữ liệu
             if (sortOption === "time") {
                 displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             } else if (sortOption === "join") {
-                // Tạo một mảng chứa tên user theo thứ tự join (lọc trùng lặp)
-                // Lọc bỏ user tạm thời (SYNC_TIME_)
-                const realParticipants = allParticipants.filter(p => !p.name.startsWith("SYNC_TIME_"));
-                const uniqueNamesOrder = Array.from(new Set(realParticipants.map(p => p.name)));
+                const orderMap = {};
+                allParticipants.forEach((p, idx) => orderMap[p.name] = idx);
 
                 displayData.sort((a, b) => {
-                    const idxA = uniqueNamesOrder.indexOf(a.name);
-                    const idxB = uniqueNamesOrder.indexOf(b.name);
-                    // Đẩy những người không có trong danh sách tham gia xuống cuối
-                    const finalIdxA = idxA === -1 ? 9999 : idxA;
-                    const finalIdxB = idxB === -1 ? 9999 : idxB;
-                    return finalIdxA - finalIdxB;
+                    const idxA = orderMap[a.name] !== undefined ? orderMap[a.name] : 9999;
+                    const idxB = orderMap[b.name] !== undefined ? orderMap[b.name] : 9999;
+                    return idxA - idxB;
                 });
             }
 
@@ -131,116 +191,19 @@
             displayData.forEach(item => {
                 const submitTime = new Date(item.created_at).getTime();
                 let diff = 0;
-                // Chỉ tính thời gian nếu có thời gian mở đáp án
-                if (roomStartTime && submitTime >= roomStartTime) { 
+                if (roomStartTime && submitTime > roomStartTime) {
                     diff = (submitTime - roomStartTime) / 1000;
-                } else if (!roomStartTime && submitTime) {
-                    // Trường hợp mở vĩnh viễn, vẫn lấy thời gian từ lúc gửi đầu tiên
-                    // SỬA LỖI: Tránh tính thời gian từ lúc Host/Manager mở panel nếu chưa có answer_open_time
-                    // Nếu roomStartTime = 0 (chưa mở), không tính diff.
-                    const minTime = Math.min(...answers.map(d => new Date(d.created_at).getTime()));
-                    if(minTime > 0 && submitTime >= minTime) {
-                         diff = (submitTime - minTime) / 1000;
-                    }
-                    if(roomStartTime === 0) diff = 0; // Đảm bảo không tính thời gian nếu Host chưa bấm mở
                 }
-                
-                // Hiển thị 'N/A' nếu không tính được thời gian hợp lệ hoặc roomStartTime = 0
                 const timeStr = diff > 0 ? diff.toFixed(3) + 's' : 'N/A';
 
                 const div = document.createElement('div');
                 div.className = 'result-row';
-                div.textContent = `${item.name} | Đáp án: ${item.answer_text} | Thời gian: ${timeStr}`;
-                container.appendChild(div);
+                div.textContent = `${item.name} | ${item.answer_text} | ${timeStr}`;
+                resultsContainer.appendChild(div);
             });
-
-            if (displayData.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding: 20px;font-weight:bold;">Chưa có đáp án nào được gửi.</div>';
-            }
         }
 
-        // --- FETCH DATA ---
-        async function fetchRoomStatus() {
-            const { data } = await supabase.from('rooms').select('*').eq('room_code', myRoom).single();
-            if (data) {
-                roomStartTime = data.answer_open_time ? new Date(data.answer_open_time).getTime() : 0;
-            }
-        }
-
-        async function fetchAnswers() {
-            const { data } = await supabase.from('answers').select('*').eq('room_code', myRoom);
-            if (data) {
-                answers = data;
-                renderResults();
-            }
-        }
-
-        async function fetchUsers() {
-            // Lấy danh sách để sắp xếp theo thứ tự vào phòng
-            const { data } = await supabase
-                .from('participants')
-                .select('*')
-                .eq('room_code', myRoom)
-                .order('created_at', { ascending: true });
-
-            if (data) { allParticipants = data; renderResults(); }
-        }
-
-        async function fetchInitialData() {
-            await fetchRoomStatus();
-            await fetchAnswers();
-            await fetchUsers();
-        }
-
-        function handleRoomUpdate(room) {
-            roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-            // Cập nhật lại kết quả để tính lại thời gian nếu roomStartTime thay đổi
-            renderResults();
-        }
-
-        // --- REALTIME (ĐÃ SỬA) ---
-        function subscribeRealtime() {
-            // 1. Kênh lắng nghe trạng thái phòng
-            if (roomChannel) supabase.removeChannel(roomChannel);
-            roomChannel = supabase.channel('room_channel_result')
-                .on(
-                    'postgres_changes',
-                    { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${myRoom}` },
-                    (payload) => handleRoomUpdate(payload.new)
-                ).subscribe();
-                
-            // 2. Kênh lắng nghe thay đổi bảng answers (SỬA: Gỡ bỏ và đăng ký lại)
-            if (answersChannel) supabase.removeChannel(answersChannel);
-            answersChannel = supabase.channel('answers_channel_result')
-                .on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${myRoom}` },
-                    fetchAnswers // Sẽ được gọi khi có INSERT (gửi đáp án) hoặc DELETE (reset)
-                ).subscribe();
-                
-            // 3. Kênh lắng nghe thay đổi bảng participants (SỬA: Để cập nhật thứ tự join)
-            if (participantsChannel) supabase.removeChannel(participantsChannel);
-            participantsChannel = supabase.channel('participants_channel_result')
-                .on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${myRoom}` },
-                    fetchUsers
-                ).subscribe();
-        }
-
-        // --- WINDOW ONLOAD ---
-        window.onload = () => {
-            const code = getQueryVariable('room');
-            if (!code) {
-                document.getElementById('headerContainer').innerHTML = '';
-                return;
-            }
-            myRoom = parseInt(code);
-            document.getElementById('roomInfo').innerText = `Mã phòng: ${code}`;
-            fetchInitialData();
-            subscribeRealtime();
-        };
-
+        init();
     </script>
 </body>
 

@@ -817,20 +817,32 @@
       lockedAnswer = room.answer_status === 'locked';
       lockedBuzz = room.buzz_status === 'locked';
 
-      answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-      answerDurationLimit = room.answer_duration || 0;
-      answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
+      // SỬA: Xử lý khi Host/Manager khác bấm Reset
+      if (!room.answer_open_time) {
+        answerStartTime = 0;
+        answerDurationLimit = 0;
+        answerEndTime = 0;
+        answers = []; // Xóa dữ liệu cục bộ
+        renderAnswers(); // Render lại để xóa bảng
+      } else {
+        answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+        answerDurationLimit = room.answer_duration || 0;
+        answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
+      }
 
-      buzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
-      buzzDurationLimit = room.buzz_duration || 0;
-      buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+      if (!room.buzz_open_time) {
+        buzzStartTime = 0;
+        buzzDurationLimit = 0;
+        buzzEndTime = 0;
+        buzzOrder = []; // Xóa dữ liệu cục bộ
+        renderBuzz(); // Render lại để xóa bảng
+      } else {
+        buzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
+        buzzDurationLimit = room.buzz_duration || 0;
+        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+      }
 
       updateUI();
-      // renderAnswers() được gọi trong Realtime listener của answersChannel. 
-      // Không cần gọi lại ở đây để tránh gọi thừa.
-      // Tuy nhiên, nếu cập nhật trạng thái phòng có thể ảnh hưởng đến cách tính thời gian, 
-      // nên gọi lại renderAnswers nếu answerStartTime thay đổi
-      // Nhưng fetchAnswers sẽ gọi renderAnswers, nên ta giữ nguyên fetchAnswers trong Realtime.
     }
 
 
@@ -969,6 +981,7 @@
       let errorMsg = isAnswer ? "Lỗi reset đáp án!" : "Lỗi reset chuông!";
 
       // BƯỚC 1: CẬP NHẬT TRẠNG THÁI PHÒNG VÀ RESET THỜI GIAN
+      // Việc đặt answer_open_time = null ở đây sẽ gửi tín hiệu realtime cho tất cả Host/Manager khác và Result.html
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
       if (roomError) return showPopup(errorMsg + " (Lỗi cập nhật phòng)", "error");
 
