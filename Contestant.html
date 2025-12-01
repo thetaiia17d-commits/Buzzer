@@ -265,6 +265,7 @@
     }
 
     // --- THAM GIA PHÒNG (ĐÃ SỬA LOGIC) ---
+    // --- THAM GIA PHÒNG (CHIẾN THUẬT MỚI: INSERT TRƯỚC, CHECK SAU) ---
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
@@ -274,40 +275,48 @@
 
       const code = parseInt(codeString);
 
-      const { data: room, error } = await supabase.from('rooms').select('*').eq('room_code', code).single();
-      if (error || !room) return showPopup("Phòng không tồn tại!", "error");
+      // 1. Kiểm tra phòng tồn tại
+      const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
+      if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-      // 1. Kiểm tra xem người dùng đã tồn tại chưa
-      const { data: existingUser } = await supabase
-        .from('participants')
-        .select('role')
-        .eq('room_code', code)
-        .eq('name', name)
-        .maybeSingle();
+      // 2. THỬ INSERT LUÔN (Nếu chưa có tên -> Thành công. Nếu có tên -> Báo lỗi Duplicate)
+      const { error: insertError } = await supabase.from('participants').insert([{
+        room_code: code,
+        name: name,
+        role: 'contestant'
+      }]);
 
-      if (existingUser) {
-        // Nếu đã tồn tại
-        if (existingUser.role !== 'contestant') {
-          // Nếu trùng tên nhưng khác role (Host/Manager) -> Chặn
-          return showPopup("Tên này đã được sử dụng bởi Ban tổ chức!", "error");
+      // 3. XỬ LÝ KẾT QUẢ INSERT
+      if (insertError) {
+        // Mã lỗi 23505 là lỗi trùng lặp (Unique Violation) trong Postgres
+        if (insertError.code === '23505' || insertError.message.includes('duplicate')) {
+          
+          // Tên đã tồn tại -> Kiểm tra xem nó là vai trò gì
+          const { data: existingUser } = await supabase
+            .from('participants')
+            .select('role')
+            .eq('room_code', code)
+            .eq('name', name)
+            .single();
+
+          if (existingUser && existingUser.role === 'contestant') {
+            // Trùng tên + Cùng vai trò -> CHO PHÉP VÀO (Rejoin)
+            showPopup("Chào mừng bạn quay lại!");
+            // Code sẽ chạy tiếp xuống dưới để setup giao diện...
+          } else {
+            // Trùng tên + Khác vai trò (là Host/Manager) -> CHẶN
+            return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
+          }
         } else {
-          // Nếu trùng tên và đúng là role thí sinh -> Cho phép vào lại (Rejoin)
-          // Không insert mới, coi như 1 người
-          showPopup("Chào mừng bạn quay lại!");
+          // Các lỗi khác (mất mạng, lỗi server...)
+          return showPopup("Lỗi tham gia: " + insertError.message, "error");
         }
       } else {
-        // Chưa tồn tại -> Insert mới
-        const { error: insertError } = await supabase.from('participants').insert([{
-          room_code: code,
-          name: name,
-          role: 'contestant'
-        }]);
-
-        if (insertError) return showPopup("Lỗi tham gia: " + insertError.message, "error");
+        // Insert thành công (Người mới)
         showPopup("Đã vào phòng " + code);
       }
 
-      // --- Setup Interface (Chung cho cả New Join và Rejoin) ---
+      // --- SETUP GIAO DIỆN (Chạy cho cả người mới và người Rejoin) ---
       myRoom = code;
       myName = name;
 

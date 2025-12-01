@@ -1000,6 +1000,7 @@
         };
       }
 
+      // --- Xử lý nút Xác nhận tham gia Quản lý ---
       const btnConfirmManager = document.getElementById("btnConfirmManager");
       if (btnConfirmManager) {
         btnConfirmManager.onclick = async () => {
@@ -1008,44 +1009,49 @@
           const joinPopup = document.getElementById("joinPopup");
 
           if (!codeStrInput || !nameInput) return showPopup("Thiếu trường nhập liệu!", "error");
-
           const codeStr = codeStrInput.value.trim();
           const name = nameInput.value.trim();
 
           if (codeStr.length !== 6 || !name || isNaN(parseInt(codeStr))) return showPopup("Thông tin không hợp lệ", "error");
           const code = parseInt(codeStr);
 
+          // 1. Check phòng
           const { data: room } = await supabase.from('rooms').select('*').eq('room_code', code).single();
           if (!room) return showPopup("Phòng không tồn tại", "error");
 
-          // 1. Check user tồn tại
-          const { data: existingUser } = await supabase
-            .from('participants')
-            .select('role')
-            .eq('room_code', code)
-            .eq('name', name)
-            .maybeSingle();
+          // 2. THỬ INSERT QUẢN LÝ
+          const { error: insertError } = await supabase.from('participants').insert([{
+            room_code: code,
+            name: name,
+            role: "manager"
+          }]);
 
-          if (existingUser) {
-            // Đã tồn tại
-            if (existingUser.role !== 'manager') {
-              // Khác role -> Chặn
-              return showPopup("Tên này đã có người sử dụng (Thí sinh/Host)!", "error");
+          if (insertError) {
+            // Nếu bị trùng tên
+            if (insertError.code === '23505' || insertError.message.includes('duplicate')) {
+              // Kiểm tra vai trò người đang giữ tên đó
+              const { data: existingUser } = await supabase
+                .from('participants')
+                .select('role')
+                .eq('room_code', code)
+                .eq('name', name)
+                .single();
+
+              if (existingUser && existingUser.role === 'manager') {
+                // Cùng là Manager -> Cho vào lại
+                showPopup("Quản lý đã quay lại!");
+              } else {
+                // Là Thí sinh hoặc Host -> Chặn
+                return showPopup("Tên này đang là Thí sinh hoặc Host! Không thể trùng.", "error");
+              }
             } else {
-              // Cùng role -> Cho vào lại
-              showPopup("Chào mừng quản lý quay lại!");
+              return showPopup("Lỗi tham gia: " + insertError.message, "error");
             }
           } else {
-            // Chưa tồn tại -> Insert
-            const { error } = await supabase.from('participants').insert([{
-              room_code: code,
-              name: name,
-              role: "manager"
-            }]);
-            if (error) return showPopup("Lỗi tham gia: " + error.message, "error");
             showPopup("Đã tham gia quản lý!");
           }
 
+          // Setup giao diện
           setupRoom(code, name, "manager");
           if (joinPopup) joinPopup.style.display = "none";
         };
