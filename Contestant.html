@@ -316,6 +316,8 @@
     function subscribeRealtime() {
         if (roomChannel) supabase.removeChannel(roomChannel);
         
+        // SỬA LỖI: Cần thêm cấu hình presence { key: myName } 
+        // để Supabase có thể theo dõi sự hiện diện của người dùng này và gửi event 'leave' về Host khi mất kết nối.
         roomChannel = supabase.channel('room-' + myRoom, { config: { presence: { key: myName } } });
         
         roomChannel
@@ -339,12 +341,13 @@
           
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
-                // Gửi tín hiệu Presence để Host biết mình còn online
-                await roomChannel.track({
+                // Gửi tín hiệu Presence để Host biết mình còn online (Dòng này đã đúng)
+                const { error } = await roomChannel.track({
                     name: myName,
                     role: 'contestant',
                     online_at: new Date().toISOString()
                 });
+                if (error) console.error("Error tracking presence:", error);
             }
         });
     }
