@@ -32,6 +32,23 @@
             padding: 8px 0;
             font-size: 1.2em;
         }
+        
+        /* Bổ sung CSS cho phần sắp xếp để đảm bảo tính ổn định và đúng font */
+        #sortOptions {
+            font-family: Arial, sans-serif;
+            margin-bottom: 10px;
+            font-weight: bold; /* Chữ đậm */
+            text-align: center;
+            color: black;
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+        }
+        
+        #sortOptions label {
+            cursor: pointer;
+        }
+        /* Kết thúc CSS bổ sung */
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -42,14 +59,12 @@
         <span id="roomStatus" style="color: blue;">Đang kết nối...</span>
     </div>
 
-    <div id="sortOptions"
-        style="font-family: Arial, sans-serif; margin-bottom: 10px; font-weight: bold; text-align: center; color: black; display: flex; justify-content: center; gap: 30px;">
-        <label style="cursor: pointer;">
-            <input type="radio" name="sortOption" value="join" onchange="render()"> <strong>Theo thứ tự vào phòng</strong>
+    <div id="sortOptions">
+        <label>
+            <input type="radio" name="sortOption" value="join" onchange="render()"> Theo thứ tự vào phòng
         </label>
-        <label style="cursor: pointer;">
-            <input type="radio" name="sortOption" value="time" checked onchange="render()"> <strong>Theo thời gian trả
-                lời</strong>
+        <label>
+            <input type="radio" name="sortOption" value="time" checked onchange="render()"> Theo thời gian trả lời
         </label>
     </div>
     <div id="resultsContainer">Đang tải...</div>
