@@ -456,7 +456,7 @@
     // Offset giờ server
     let serverTimeOffset = 0;
 
-    // DOM Elements
+    // DOM Elements (Khai báo biến chung để dùng trong các hàm)
     const roomInfo = document.getElementById("roomInfo");
     const tblAnswersBody = document.querySelector("#tblAnswers tbody");
     const tblBuzzBody = document.querySelector("#tblBuzz tbody");
@@ -537,8 +537,8 @@
 
       const aDisp = document.getElementById("answerTimeElapsed");
       const bDisp = document.getElementById("buzzTimeElapsed");
-      const sA = document.getElementById("statusAnswer");
-      const sB = document.getElementById("statusBuzz");
+
+      if (!aDisp || !bDisp) return; // Bảo vệ nếu các element chưa load
 
       if (!lockedAnswer && answerDurationLimit > 0 && answerEndTime > 0) {
         const remain = answerEndTime - currentServerTime;
@@ -573,6 +573,7 @@
 
     // --- RENDER FUNCTIONS ---
     function renderAnswers() {
+      if (!tblAnswersBody) return; // Bảo vệ nếu element chưa load
       tblAnswersBody.innerHTML = "";
       const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
       const latestAnswersMap = new Map();
@@ -607,6 +608,7 @@
     }
 
     function renderBuzz() {
+      if (!tblBuzzBody) return; // Bảo vệ nếu element chưa load
       tblBuzzBody.innerHTML = "";
       const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       sorted.forEach(item => {
@@ -618,9 +620,10 @@
 
     function renderUserListPopup() {
       const ul = document.querySelector("#listPopup ul");
+      if (!ul) return; // Bảo vệ nếu element chưa load
+
       ul.innerHTML = "";
 
-      // Tách người chơi thật và người chơi hệ thống
       const realUsers = allParticipants.filter(u => !u.name.startsWith("SYNC_TIME_"));
       const systemUsers = allParticipants.filter(u => u.name.startsWith("SYNC_TIME_"));
 
@@ -638,10 +641,8 @@
         ul.appendChild(li);
       };
 
-      // Render người chơi thật
       realUsers.forEach(processUser);
 
-      // Render người chơi hệ thống (chữ đậm màu tím, xếp cuối)
       systemUsers.forEach(u => {
         const li = document.createElement("li");
         li.style.cssText = "font-weight: bold; color: purple;";
@@ -696,7 +697,7 @@
       buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
 
       updateUI();
-      renderAnswers(); // Re-render answers to update time display if start time changed
+      renderAnswers();
     }
 
 
@@ -706,35 +707,30 @@
 
       roomChannel = supabase.channel('room-' + currentRoom, { config: { presence: { key: myName } } });
 
-      // Cập nhật trạng thái phòng (mở/khóa, thời gian)
       roomChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` },
         (payload) => handleRoomUpdate(payload.new)
       ).subscribe();
 
-      // Cập nhật câu trả lời (bao gồm khi delete/reset)
       supabase.channel('answers_channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
           fetchAnswers)
         .subscribe();
 
-      // Cập nhật chuông (bao gồm khi delete/reset)
       supabase.channel('buzzes_channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
           fetchBuzz)
         .subscribe();
 
-      // Cập nhật danh sách người tham gia (bao gồm khi join/leave)
       supabase.channel('participants_channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` },
           fetchUsers)
         .subscribe();
 
-      // Xử lý người chơi rời phòng (dọn dẹp dữ liệu)
       roomChannel.on('presence', { event: 'leave' }, async (payload) => {
         const userLeft = payload.left.map(p => p.key);
         userLeft.forEach(async (name) => {
-          if (name === myName) return; // Không xóa chính mình
-          if (name.startsWith("SYNC_TIME_")) return; // Không xóa user hệ thống
+          if (name === myName) return;
+          if (name.startsWith("SYNC_TIME_")) return;
 
           const { error } = await supabase.from('participants')
             .delete()
@@ -749,59 +745,6 @@
 
     // --- CHỨC NĂNG CHÍNH ---
 
-    // ... (btnCreate, btnJoinManager, btnConfirmManager, setupRoom... giữ nguyên)
-    document.getElementById("btnCreate").onclick = async () => {
-      const code = Math.floor(100000 + Math.random() * 900000);
-      const { error } = await supabase.from('rooms').insert([{
-        room_code: code,
-        answer_status: 'locked',
-        buzz_status: 'locked',
-        host_id: 'host_browser'
-      }]);
-      if (error) return showPopup("Lỗi tạo phòng: " + error.message, "error");
-
-      await supabase.from('participants').insert([{
-        room_code: code,
-        name: "Host",
-        role: "host"
-      }]);
-
-      setupRoom(code, "Host", "host");
-      showPopup("Đã tạo phòng: " + code);
-    };
-
-    document.getElementById("btnJoinManager").onclick = () => {
-      document.getElementById("joinPopup").style.display = "flex";
-      if (currentRoom) document.getElementById("managerRoomCode").value = currentRoom;
-    };
-    document.getElementById("btnCloseJoin").onclick = () => document.getElementById("joinPopup").style.display = "none";
-
-    document.getElementById("btnConfirmManager").onclick = async () => {
-      const codeStr = document.getElementById("managerRoomCode").value.trim();
-      const name = document.getElementById("managerName").value.trim();
-
-      if (codeStr.length !== 6 || !name || isNaN(parseInt(codeStr))) return showPopup("Thông tin không hợp lệ", "error");
-      const code = parseInt(codeStr);
-
-      const { data: room } = await supabase.from('rooms').select('*').eq('room_code', code).single();
-      if (!room) return showPopup("Phòng không tồn tại", "error");
-
-      const isExist = await checkUserExists(code, name);
-      if (isExist) return showPopup("Tên này đã có người sử dụng!", "error");
-
-      const { error } = await supabase.from('participants').insert([{
-        room_code: code,
-        name: name,
-        role: "manager"
-      }]);
-
-      if (error) return showPopup("Lỗi tham gia: " + error.message, "error");
-
-      setupRoom(code, name, "manager");
-      document.getElementById("joinPopup").style.display = "none";
-      showPopup("Đã tham gia quản lý!");
-    };
-
     function setupRoom(code, name, role) {
       currentRoom = code;
       myName = name;
@@ -814,142 +757,188 @@
       });
     }
 
-    // --- CÁC NÚT ĐIỀU KHIỂN ---
-    document.getElementById("btnOpenAnswer").onclick = async () => {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
-      const nowISO = getServerTimeNowISO();
-      const duration = parseFloat(answerDurationInput.value);
 
-      const { error } = await supabase.from('rooms').update({
-        answer_status: 'open',
-        answer_open_time: nowISO,
-        answer_duration: isNaN(duration) ? 0 : duration
-      }).eq('room_code', currentRoom);
-
-      if (error) showPopup("Lỗi mở đáp án: " + error.message, "error");
-      else showPopup("Đã mở đáp án!");
-    };
-
-    document.getElementById("btnCloseAnswer").onclick = async () => {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
-      const { error } = await supabase.from('rooms').update({ answer_status: 'locked' }).eq('room_code', currentRoom);
-      if (error) showPopup("Lỗi khóa đáp án: " + error.message, "error");
-      else showPopup("Đã khóa đáp án!");
-    };
-
-    document.getElementById("btnOpenBuzz").onclick = async () => {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
-      const nowISO = getServerTimeNowISO();
-      const duration = parseFloat(buzzDurationInput.value);
-
-      const { error } = await supabase.from('rooms').update({
-        buzz_status: 'open',
-        buzz_open_time: nowISO,
-        buzz_duration: isNaN(duration) ? 0 : duration
-      }).eq('room_code', currentRoom);
-
-      if (error) showPopup("Lỗi mở chuông: " + error.message, "error");
-      else showPopup("Đã mở chuông!");
-    };
-
-    document.getElementById("btnCloseBuzz").onclick = async () => {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
-      const { error } = await supabase.from('rooms').update({ buzz_status: 'locked' }).eq('room_code', currentRoom);
-      if (error) showPopup("Lỗi khóa chuông: " + error.message, "error");
-      else showPopup("Đã khóa chuông!");
-    };
-
-    // --- NÚT RESET ĐÁP ÁN (Đã cập nhật) ---
-    document.getElementById("btnResetAnswer").onclick = async () => {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
-
-      // 1. Xóa hết đáp án trong bảng answers
-      const { error: ansError } = await supabase.from('answers').delete().eq('room_code', currentRoom);
-
-      // 2. Xóa thời gian bắt đầu đáp án trong bảng rooms
-      const { error: roomError } = await supabase.from('rooms').update({ answer_open_time: null }).eq('room_code', currentRoom);
-
-      if (ansError || roomError) {
-        showPopup("Lỗi reset đáp án!", "error");
-      } else {
-        // Cập nhật trạng thái local ngay lập tức
-        answers = [];
-        answerStartTime = 0;
-        answerDurationLimit = 0;
-        answerEndTime = 0;
-        renderAnswers();
-        updateUI();
-        showPopup("Đã xóa hết đáp án!");
-        // Các Host/Manager khác và Result.html sẽ tự động đồng bộ qua Realtime
-      }
-    };
-
-    // --- NÚT RESET CHUÔNG (Đã cập nhật) ---
-    document.getElementById("btnResetBuzz").onclick = async () => {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
-
-      // 1. Xóa hết chuông trong bảng buzzes
-      const { error } = await supabase.from('buzzes').delete().eq('room_code', currentRoom);
-
-      if (error) {
-        showPopup("Lỗi reset chuông!", "error");
-      } else {
-        // Cập nhật trạng thái local ngay lập tức
-        buzzOrder = [];
-        buzzStartTime = 0;
-        buzzDurationLimit = 0;
-        buzzEndTime = 0;
-        renderBuzz();
-        updateUI();
-        showPopup("Đã xóa hết chuông!");
-        // Các Host/Manager khác sẽ tự động đồng bộ qua Realtime
-      }
-    };
-
-    // ... (btnViewResult, btnViewList, btnExportResults... giữ nguyên)
-    document.getElementById("btnViewResult").onclick = () => {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
-      window.open(`Result.html?roomid=${currentRoom}`, "_blank");
-    };
-
-    document.getElementById("btnViewList").onclick = () => {
-      document.getElementById("listPopup").style.display = "flex";
-    };
-
-    document.getElementById("btnCloseList").onclick = () => {
-      document.getElementById("listPopup").style.display = "none";
-    };
-
-    document.getElementById("btnExportResults").onclick = () => {
-      if (!currentRoom) return showPopup("Chưa có phòng để xuất! tại:", "error");
-      const wb = XLSX.utils.book_new();
-
-      const wsData1 = [
-        ["Tên", "Đáp án", "Thời gian (s)"]
-      ];
-      const latestMap = new Map();
-      answers.forEach(item => {
-        const existing = latestMap.get(item.name);
-        if (!existing || new Date(item.created_at) > new Date(existing.created_at)) latestMap.set(item.name, item);
-      });
-      Array.from(latestMap.values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-        .forEach(a => wsData1.push([a.name, a.answer_text, formatTimeDisplay(a.created_at, answerStartTime)]));
-      const ws1 = XLSX.utils.aoa_to_sheet(wsData1);
-      XLSX.utils.book_append_sheet(wb, ws1, "DapAn");
-
-      const wsData2 = [
-        ["Tên", "Thời gian bấm (s)"]
-      ];
-      [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-        .forEach(b => wsData2.push([b.name, formatTimeDisplay(b.created_at, buzzStartTime)]));
-      const ws2 = XLSX.utils.aoa_to_sheet(wsData2);
-      XLSX.utils.book_append_sheet(wb, ws2, "Chuong");
-
-      XLSX.writeFile(wb, `KetQua_${currentRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    };
-
+    // --- WINDOW ONLOAD ĐỂ GÁN EVENT LISTENER (Đã sửa lỗi) ---
     window.onload = () => {
-      // Logic kiểm tra hash và tự động vào phòng
+      // GÁN EVENT LISTENER CHO TẤT CẢ CÁC NÚT BẤM SAU KHI HTML ĐƯỢC TẢI
+
+      document.getElementById("btnCreate").onclick = async () => {
+        const code = Math.floor(100000 + Math.random() * 900000);
+        const { error } = await supabase.from('rooms').insert([{
+          room_code: code,
+          answer_status: 'locked',
+          buzz_status: 'locked',
+          host_id: 'host_browser'
+        }]);
+        if (error) return showPopup("Lỗi tạo phòng: " + error.message, "error");
+
+        await supabase.from('participants').insert([{
+          room_code: code,
+          name: "Host",
+          role: "host"
+        }]);
+
+        setupRoom(code, "Host", "host");
+        showPopup("Đã tạo phòng: " + code);
+      };
+
+      document.getElementById("btnJoinManager").onclick = () => {
+        document.getElementById("joinPopup").style.display = "flex";
+        if (currentRoom) document.getElementById("managerRoomCode").value = currentRoom;
+      };
+      document.getElementById("btnCloseJoin").onclick = () => document.getElementById("joinPopup").style.display = "none";
+
+      document.getElementById("btnConfirmManager").onclick = async () => {
+        const codeStr = document.getElementById("managerRoomCode").value.trim();
+        const name = document.getElementById("managerName").value.trim();
+
+        if (codeStr.length !== 6 || !name || isNaN(parseInt(codeStr))) return showPopup("Thông tin không hợp lệ", "error");
+        const code = parseInt(codeStr);
+
+        const { data: room } = await supabase.from('rooms').select('*').eq('room_code', code).single();
+        if (!room) return showPopup("Phòng không tồn tại", "error");
+
+        const isExist = await checkUserExists(code, name);
+        if (isExist) return showPopup("Tên này đã có người sử dụng!", "error");
+
+        const { error } = await supabase.from('participants').insert([{
+          room_code: code,
+          name: name,
+          role: "manager"
+        }]);
+
+        if (error) return showPopup("Lỗi tham gia: " + error.message, "error");
+
+        setupRoom(code, name, "manager");
+        document.getElementById("joinPopup").style.display = "none";
+        showPopup("Đã tham gia quản lý!");
+      };
+
+      document.getElementById("btnOpenAnswer").onclick = async () => {
+        if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+        const nowISO = getServerTimeNowISO();
+        const duration = parseFloat(answerDurationInput.value);
+
+        const { error } = await supabase.from('rooms').update({
+          answer_status: 'open',
+          answer_open_time: nowISO,
+          answer_duration: isNaN(duration) ? 0 : duration
+        }).eq('room_code', currentRoom);
+
+        if (error) showPopup("Lỗi mở đáp án: " + error.message, "error");
+        else showPopup("Đã mở đáp án!");
+      };
+
+      document.getElementById("btnCloseAnswer").onclick = async () => {
+        if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+        const { error } = await supabase.from('rooms').update({ answer_status: 'locked' }).eq('room_code', currentRoom);
+        if (error) showPopup("Lỗi khóa đáp án: " + error.message, "error");
+        else showPopup("Đã khóa đáp án!");
+      };
+
+      document.getElementById("btnOpenBuzz").onclick = async () => {
+        if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+        const nowISO = getServerTimeNowISO();
+        const duration = parseFloat(buzzDurationInput.value);
+
+        const { error } = await supabase.from('rooms').update({
+          buzz_status: 'open',
+          buzz_open_time: nowISO,
+          buzz_duration: isNaN(duration) ? 0 : duration
+        }).eq('room_code', currentRoom);
+
+        if (error) showPopup("Lỗi mở chuông: " + error.message, "error");
+        else showPopup("Đã mở chuông!");
+      };
+
+      document.getElementById("btnCloseBuzz").onclick = async () => {
+        if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+        const { error } = await supabase.from('rooms').update({ buzz_status: 'locked' }).eq('room_code', currentRoom);
+        if (error) showPopup("Lỗi khóa chuông: " + error.message, "error");
+        else showPopup("Đã khóa chuông!");
+      };
+
+      document.getElementById("btnResetAnswer").onclick = async () => {
+        if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+
+        const { error: ansError } = await supabase.from('answers').delete().eq('room_code', currentRoom);
+        const { error: roomError } = await supabase.from('rooms').update({ answer_open_time: null }).eq('room_code', currentRoom);
+
+        if (ansError || roomError) {
+          showPopup("Lỗi reset đáp án!", "error");
+        } else {
+          answers = [];
+          answerStartTime = 0;
+          answerDurationLimit = 0;
+          answerEndTime = 0;
+          renderAnswers();
+          updateUI();
+          showPopup("Đã xóa hết đáp án!");
+        }
+      };
+
+      document.getElementById("btnResetBuzz").onclick = async () => {
+        if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+
+        const { error } = await supabase.from('buzzes').delete().eq('room_code', currentRoom);
+
+        if (error) {
+          showPopup("Lỗi reset chuông!", "error");
+        } else {
+          buzzOrder = [];
+          buzzStartTime = 0;
+          buzzDurationLimit = 0;
+          buzzEndTime = 0;
+          renderBuzz();
+          updateUI();
+          showPopup("Đã xóa hết chuông!");
+        }
+      };
+
+      document.getElementById("btnViewResult").onclick = () => {
+        if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+        window.open(`Result.html?roomid=${currentRoom}`, "_blank");
+      };
+
+      document.getElementById("btnViewList").onclick = () => {
+        document.getElementById("listPopup").style.display = "flex";
+      };
+
+      document.getElementById("btnCloseList").onclick = () => {
+        document.getElementById("listPopup").style.display = "none";
+      };
+
+      document.getElementById("btnExportResults").onclick = () => {
+        if (!currentRoom) return showPopup("Chưa có phòng để xuất!", "error");
+
+        const wb = XLSX.utils.book_new();
+
+        const wsData1 = [
+          ["Tên", "Đáp án", "Thời gian (s)"]
+        ];
+        const latestMap = new Map();
+        answers.forEach(item => {
+          const existing = latestMap.get(item.name);
+          if (!existing || new Date(item.created_at) > new Date(existing.created_at)) latestMap.set(item.name, item);
+        });
+        Array.from(latestMap.values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+          .forEach(a => wsData1.push([a.name, a.answer_text, formatTimeDisplay(a.created_at, answerStartTime)]));
+        const ws1 = XLSX.utils.aoa_to_sheet(wsData1);
+        XLSX.utils.book_append_sheet(wb, ws1, "DapAn");
+
+        const wsData2 = [
+          ["Tên", "Thời gian bấm (s)"]
+        ];
+        [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+          .forEach(b => wsData2.push([b.name, formatTimeDisplay(b.created_at, buzzStartTime)]));
+        const ws2 = XLSX.utils.aoa_to_sheet(wsData2);
+        XLSX.utils.book_append_sheet(wb, ws2, "Chuong");
+
+        XLSX.writeFile(wb, `KetQua_${currentRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      };
+
+
+      // --- LOGIC TỰ ĐỘNG VÀO PHÒNG ---
       const roomCode = localStorage.getItem('lastRoomCode');
       const savedName = localStorage.getItem('lastName');
       const savedRole = localStorage.getItem('lastRole');
