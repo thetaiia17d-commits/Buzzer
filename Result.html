@@ -32,22 +32,24 @@
             padding: 8px 0;
             font-size: 1.2em;
         }
-        
+
         /* Bổ sung CSS cho phần sắp xếp để đảm bảo tính ổn định và đúng font */
         #sortOptions {
             font-family: Arial, sans-serif;
             margin-bottom: 10px;
-            font-weight: bold; /* Chữ đậm */
+            font-weight: bold;
+            /* Chữ đậm */
             text-align: center;
             color: black;
             display: flex;
             justify-content: center;
             gap: 30px;
         }
-        
+
         #sortOptions label {
             cursor: pointer;
         }
+
         /* Kết thúc CSS bổ sung */
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -81,7 +83,7 @@
 
         let answers = [];
         let roomStartTime = null;
-        let allParticipants = []; 
+        let allParticipants = [];
 
         async function init() {
             if (!roomCode) {
@@ -90,49 +92,51 @@
             }
             roomStatus.innerText = "Phòng: " + roomCode;
 
-            // 1. Lấy thứ tự vào phòng
             await fetchParticipants();
 
-            // 2. Lấy thời gian bắt đầu phòng
             const { data: room } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
-            if (room) roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+            if (room) {
+                roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+            }
 
-            // 3. Lấy và render kết quả ban đầu
             await fetchAndRender();
 
-            // 4. Đăng ký realtime
+            // Đăng ký realtime cho answers
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
                     () => { fetchAndRender(); })
                 .subscribe();
 
+            // Đăng ký realtime cho rooms (Đã sửa để bắt cả trường hợp answer_open_time bị reset thành null)
             supabase.channel('room_channel')
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
                     (payload) => {
-                        if (payload.new.answer_open_time) {
-                            roomStartTime = new Date(payload.new.answer_open_time).getTime();
+                        if ('answer_open_time' in payload.new) {
+                            if (payload.new.answer_open_time) {
+                                roomStartTime = new Date(payload.new.answer_open_time).getTime();
+                            } else {
+                                roomStartTime = 0; // Reset thời gian bắt đầu khi Host Reset Đáp án
+                            }
                             render();
                         }
                     })
                 .subscribe();
 
-            // Thêm subscription cho danh sách người chơi để cập nhật thứ tự vào phòng
+            // Đăng ký realtime cho participants
             supabase.channel('participants_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${roomCode}` },
                     () => { fetchParticipants().then(render); })
                 .subscribe();
         }
 
-        // Hàm lấy danh sách người chơi (thứ tự vào phòng)
         async function fetchParticipants() {
             const { data } = await supabase
                 .from('participants')
                 .select('name')
                 .eq('room_code', roomCode)
-                .order('created_at', { ascending: true }); 
+                .order('created_at', { ascending: true });
 
             if (data) {
-                // Loại bỏ user hệ thống (SYNC_TIME_)
                 allParticipants = data.filter(p => !p.name.startsWith("SYNC_TIME_"));
             }
         }
@@ -141,7 +145,7 @@
             const { data, error } = await supabase
                 .from('answers')
                 .select('*')
-                .eq('room_code', roomCode); 
+                .eq('room_code', roomCode);
 
             if (data) {
                 answers = data;
@@ -156,7 +160,6 @@
                 return;
             }
 
-            // --- LỌC DỮ LIỆU: Chỉ lấy đáp án mới nhất của mỗi người ---
             const latestAnswersMap = new Map();
             answers.forEach(item => {
                 const existing = latestAnswersMap.get(item.name);
@@ -167,14 +170,11 @@
 
             let displayData = Array.from(latestAnswersMap.values());
 
-            // --- SẮP XẾP DỰA TRÊN Ô TÍCH CHỌN ---
             const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
 
             if (sortOption === "time") {
-                // Sắp xếp theo thời gian nộp đáp án (Nhanh nhất lên đầu)
                 displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             } else if (sortOption === "join") {
-                // Sắp xếp theo thứ tự vào phòng
                 const orderMap = {};
                 allParticipants.forEach((p, idx) => orderMap[p.name] = idx);
 
