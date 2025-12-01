@@ -85,74 +85,46 @@
         let roomStartTime = null;
         let allParticipants = [];
 
-        async function init() {
-            if (!roomCode) {
-                resultsContainer.innerHTML = "Thiếu ?roomid=XXXXXX trên URL";
-                return;
-            }
-            roomStatus.innerText = "Phòng: " + roomCode;
-
-            await fetchParticipants();
-
-            const { data: room } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
-            if (room) {
-                roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-            }
-
-            await fetchAndRender();
-
-            // Đăng ký realtime cho answers
-            supabase.channel('answers_channel')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
-                    () => { fetchAndRender(); })
-                .subscribe();
-
-            // Đăng ký realtime cho rooms (Đã sửa để bắt cả trường hợp answer_open_time bị reset thành null)
-            supabase.channel('room_channel')
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
-                    (payload) => {
-                        if ('answer_open_time' in payload.new) {
-                            if (payload.new.answer_open_time) {
-                                roomStartTime = new Date(payload.new.answer_open_time).getTime();
-                            } else {
-                                // XỬ LÝ Reset (answer_open_time = null)
-                                roomStartTime = 0; // Reset thời gian bắt đầu
-                                answers = []; // Xóa dữ liệu cục bộ ngay lập tức
-                            }
-                            render();
-                        }
-                    })
-                .subscribe();
-
-            // Đăng ký realtime cho participants
-            supabase.channel('participants_channel')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${roomCode}` },
-                    () => { fetchParticipants().then(render); })
-                .subscribe();
-        }
-
         async function fetchParticipants() {
+            if (!roomCode) return;
             const { data } = await supabase
                 .from('participants')
-                .select('name')
+                .select('name, created_at')
                 .eq('room_code', roomCode)
                 .order('created_at', { ascending: true });
 
             if (data) {
+                // Lọc bỏ các user sync time tạm thời
                 allParticipants = data.filter(p => !p.name.startsWith("SYNC_TIME_"));
             }
         }
 
+        async function fetchRoomInfo() {
+            if (!roomCode) return;
+            const { data: room, error } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
+            if (error) {
+                console.error("Lỗi lấy thông tin phòng:", error.message);
+                return;
+            }
+            if (room) {
+                roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+            }
+        }
+
         async function fetchAndRender() {
+            if (!roomCode) return;
             const { data, error } = await supabase
                 .from('answers')
                 .select('*')
                 .eq('room_code', roomCode);
 
-            if (data) {
-                answers = data;
-                render();
+            if (error) {
+                console.error("Lỗi lấy đáp án:", error.message);
+                return;
             }
+            
+            answers = data || [];
+            render();
         }
 
         function render() {
@@ -178,6 +150,7 @@
                 displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             } else if (sortOption === "join") {
                 const orderMap = {};
+                // Sử dụng allParticipants đã được sắp xếp theo created_at
                 allParticipants.forEach((p, idx) => orderMap[p.name] = idx);
 
                 displayData.sort((a, b) => {
@@ -196,16 +169,61 @@
                 }
                 const timeStr = diff > 0 ? diff.toFixed(3) + 's' : 'N/A';
 
-                // --- SỬA LỖI Ở ĐÂY ---
                 // Tự động kiểm tra cả hai tên trường 'answer_text' và 'answer'
                 const answerText = item.answer_text || item.answer || "[Không có đáp án]";
 
                 const div = document.createElement('div');
                 div.className = 'result-row';
-                // Sử dụng biến answerText để hiển thị đáp án
                 div.textContent = `${item.name} | ${answerText} | ${timeStr}`;
                 resultsContainer.appendChild(div);
             });
+        }
+
+        async function init() {
+            if (!roomCode) {
+                resultsContainer.innerHTML = "Thiếu <b>?roomid=XXXXXX</b> trên URL";
+                roomStatus.innerText = "Lỗi";
+                return;
+            }
+            roomStatus.innerText = "Phòng: " + roomCode;
+
+            // 1. Fetch thông tin phòng và người tham gia trước
+            await fetchRoomInfo();
+            await fetchParticipants();
+            
+            // 2. Lấy và hiển thị dữ liệu ban đầu
+            await fetchAndRender();
+
+            // 3. Đăng ký Realtime
+            
+            // Đăng ký realtime cho answers
+            supabase.channel('answers_channel')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
+                    () => { fetchAndRender(); })
+                .subscribe();
+
+            // Đăng ký realtime cho rooms (cần để cập nhật roomStartTime khi Host mở lại)
+            supabase.channel('room_channel')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
+                    (payload) => {
+                        // Cập nhật roomStartTime (thời gian mở đáp án)
+                        if ('answer_open_time' in payload.new) {
+                            roomStartTime = payload.new.answer_open_time ? new Date(payload.new.answer_open_time).getTime() : 0;
+                            // Khi thời gian mở đáp án thay đổi, cần render lại để tính thời gian chính xác
+                            // (không cần fetch lại đáp án nếu không có sự kiện thay đổi đáp án)
+                            render(); 
+                        }
+                    })
+                .subscribe();
+
+            // Đăng ký realtime cho participants
+            supabase.channel('participants_channel')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${roomCode}` },
+                    () => { 
+                        // Cập nhật danh sách người tham gia và render lại (nếu đang sắp xếp theo join order)
+                        fetchParticipants().then(render); 
+                    })
+                .subscribe();
         }
 
         init();
