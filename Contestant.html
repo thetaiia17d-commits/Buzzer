@@ -233,18 +233,6 @@
       }
     }
 
-    // --- HÀM CHECK TRÙNG TÊN ---
-    async function checkUserExists(roomCode, name) {
-      const { data, error } = await supabase
-        .from('participants')
-        .select('id')
-        .eq('room_code', roomCode)
-        .eq('name', name);
-
-      if (error) return false;
-      return data && data.length > 0;
-    }
-
     // --- XỬ LÝ ĐỒNG HỒ ĐẾM NGƯỢC ---
     function startTimer(elementId, startTimeISO, duration, callbackEnd) {
       const el = document.getElementById(elementId);
@@ -276,30 +264,50 @@
       if (elementId === 'buzzCountdown') buzzInterval = interval;
     }
 
-    // --- THAM GIA PHÒNG ---
+    // --- THAM GIA PHÒNG (ĐÃ SỬA LOGIC) ---
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
 
-      if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString))) return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
+      if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString))) 
+        return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
       const code = parseInt(codeString);
 
       const { data: room, error } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (error || !room) return showPopup("Phòng không tồn tại!", "error");
 
-      // VALIDATE: Kiểm tra trùng tên trước khi vào
-      const isExist = await checkUserExists(code, name);
-      if (isExist) return showPopup("Tên đã được sử dụng trong phòng này!", "error");
+      // 1. Kiểm tra xem người dùng đã tồn tại chưa
+      const { data: existingUser } = await supabase
+        .from('participants')
+        .select('role')
+        .eq('room_code', code)
+        .eq('name', name)
+        .maybeSingle();
 
-      const { error: insertError } = await supabase.from('participants').insert([{
-        room_code: code,
-        name: name,
-        role: 'contestant'
-      }]);
+      if (existingUser) {
+        // Nếu đã tồn tại
+        if (existingUser.role !== 'contestant') {
+          // Nếu trùng tên nhưng khác role (Host/Manager) -> Chặn
+          return showPopup("Tên này đã được sử dụng bởi Ban tổ chức!", "error");
+        } else {
+          // Nếu trùng tên và đúng là role thí sinh -> Cho phép vào lại (Rejoin)
+          // Không insert mới, coi như 1 người
+          showPopup("Chào mừng bạn quay lại!");
+        }
+      } else {
+        // Chưa tồn tại -> Insert mới
+        const { error: insertError } = await supabase.from('participants').insert([{
+          room_code: code,
+          name: name,
+          role: 'contestant'
+        }]);
 
-      if (insertError) return showPopup("Lỗi tham gia: " + insertError.message, "error");
+        if (insertError) return showPopup("Lỗi tham gia: " + insertError.message, "error");
+        showPopup("Đã vào phòng " + code);
+      }
 
+      // --- Setup Interface (Chung cho cả New Join và Rejoin) ---
       myRoom = code;
       myName = name;
 
@@ -307,7 +315,6 @@
       roomCodeInput.disabled = true;
       nameInput.disabled = true;
       btnJoin.disabled = true;
-      showPopup("Đã vào phòng " + code);
 
       await syncServerTime();
       handleRoomUpdate(room);
@@ -317,8 +324,6 @@
     function subscribeRealtime() {
       if (roomChannel) supabase.removeChannel(roomChannel);
 
-      // SỬA LỖI: Cần thêm cấu hình presence { key: myName } 
-      // để Supabase có thể theo dõi sự hiện diện của người dùng này và gửi event 'leave' về Host khi mất kết nối.
       roomChannel = supabase.channel('room-' + myRoom, { config: { presence: { key: myName } } });
 
       roomChannel
@@ -331,18 +336,16 @@
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` },
           () => { hasBuzzed = false; updateBuzzUI(lockedBuzz); showPopup("Host đã reset chuông!"); })
 
-        // --- LOGIC TỰ ĐỘNG RESET NẾU TÊN MÌNH BỊ XÓA (Do mất kết nối hoặc bị Host kick) ---
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'participants', filter: `room_code=eq.${myRoom}` },
           (payload) => {
             // Nếu dòng bị xóa có tên trùng với tên mình
             if (payload.old.name === myName) {
-              location.reload(); // Reset lại trang
+              location.reload(); 
             }
           })
 
         .subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
-            // Gửi tín hiệu Presence để Host biết mình còn online (Dòng này đã đúng)
             const { error } = await roomChannel.track({
               name: myName,
               role: 'contestant',
@@ -427,7 +430,8 @@
     // =================== AUTO REMOVE WHEN LEAVING ===================
     async function leaveRoom() {
       if (!myRoom || !myName) return;
-
+      // Lưu ý: Logic này có thể xóa user nếu họ tắt tab. 
+      // Nếu họ rejoin ngay lập tức thì không sao vì ta đã cho phép Rejoin ở trên.
       try {
         await supabase
           .from("participants")
@@ -439,7 +443,6 @@
       }
     }
 
-    // Khi reload / tắt tab / đóng trình duyệt
     window.addEventListener("beforeunload", () => {
       leaveRoom();
     });
