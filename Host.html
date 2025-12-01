@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <title>Host Panel</title>
   <style>
+    /* ... (Giữ nguyên CSS) ... */
     body {
       font-family: Arial, sans-serif;
       background: #f5f5f5;
@@ -439,6 +440,9 @@
 
     // Kênh realtime
     let roomChannel = null;
+    let answersChannel = null; // SỬA: Thêm biến cho kênh answers
+    let buzzesChannel = null; // SỬA: Thêm biến cho kênh buzzes
+    let participantsChannel = null; // SỬA: Thêm biến cho kênh participants
 
     // Biến trạng thái UI
     let lockedAnswer = true;
@@ -498,6 +502,7 @@
 
     async function syncServerTime() {
       if (!currentRoom) return;
+      // SỬA: Thêm logic kiểm tra xem người dùng có phải là Host/Manager đang tham gia chưa
       const tempName = "SYNC_TIME_" + Math.random();
       const { data } = await supabase.from('participants')
         .insert([{ room_code: currentRoom, name: tempName, role: 'contestant' }])
@@ -507,6 +512,7 @@
         const serverTs = new Date(data.created_at).getTime();
         const localTs = Date.now();
         serverTimeOffset = serverTs - localTs;
+        // XÓA HÀNG TẠM THỜI (QUAN TRỌNG)
         await supabase.from('participants').delete().eq('id', data.id);
       }
     }
@@ -579,17 +585,19 @@
       if (sortOption === "time") {
         displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       } else {
-        const orderMap = {};
+        // Lọc bỏ user tạm thời (SYNC_TIME_)
         const realParticipants = allParticipants.filter(p => !p.name.startsWith("SYNC_TIME_"));
-        realParticipants.forEach((p, idx) => orderMap[p.name] = idx);
-
+        
         // Lọc trùng tên trong list orderMap trước khi sắp xếp
         const uniqueNamesOrder = Array.from(new Set(realParticipants.map(p => p.name)));
 
         displayData.sort((a, b) => {
           const idxA = uniqueNamesOrder.indexOf(a.name);
           const idxB = uniqueNamesOrder.indexOf(b.name);
-          return idxA - idxB;
+          // Đẩy những người không có trong danh sách tham gia xuống cuối
+          const finalIdxA = idxA === -1 ? 9999 : idxA;
+          const finalIdxB = idxB === -1 ? 9999 : idxB;
+          return finalIdxA - finalIdxB;
         });
       }
 
@@ -731,7 +739,8 @@
           const name = row.querySelector('.add-name')?.value.trim();
           const answer = row.querySelector('.add-answer')?.value.trim();
           if (!name || !answer) return null;
-          const created_at_ts = baseTime > 0 ? baseTime + 1 : Date.now() + serverTimeOffset;
+          // SỬA: Lấy thời gian hiện tại của server nếu baseTime = 0 (Chưa mở đáp án)
+          const created_at_ts = baseTime > 0 ? baseTime + 1 : Date.now() + serverTimeOffset; 
           return {
             room_code: currentRoom,
             name: name,
@@ -748,6 +757,7 @@
           const timeDiff = parseFloat(timeStr);
 
           if (!name || isNaN(timeDiff) || timeDiff < 0) return null;
+          // SỬA: Tính toán thời gian dựa trên baseTime
           const created_at_ts = baseTime > 0 ? baseTime + timeDiff * 1000 : Date.now() + serverTimeOffset;
 
           return {
@@ -816,12 +826,17 @@
       buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
 
       updateUI();
-      renderAnswers();
+      // renderAnswers() được gọi trong Realtime listener của answersChannel. 
+      // Không cần gọi lại ở đây để tránh gọi thừa.
+      // Tuy nhiên, nếu cập nhật trạng thái phòng có thể ảnh hưởng đến cách tính thời gian, 
+      // nên gọi lại renderAnswers nếu answerStartTime thay đổi
+      // Nhưng fetchAnswers sẽ gọi renderAnswers, nên ta giữ nguyên fetchAnswers trong Realtime.
     }
 
 
     // --- REALTIME ---
     function subscribeRealtime() {
+      // 1. Kênh lắng nghe trạng thái phòng
       if (roomChannel) supabase.removeChannel(roomChannel);
 
       roomChannel = supabase.channel(
@@ -834,22 +849,26 @@
         { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` },
         (payload) => handleRoomUpdate(payload.new)
       );
-
-      supabase.channel('answers_channel')
+      
+      // SỬA: Đăng ký kênh riêng và gán vào biến để quản lý
+      if (answersChannel) supabase.removeChannel(answersChannel);
+      answersChannel = supabase.channel('answers_channel')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
-          fetchAnswers
+          fetchAnswers // Khi có INSERT hoặc DELETE (Reset), fetchAnswers sẽ lấy dữ liệu mới và render lại
         ).subscribe();
-
-      supabase.channel('buzzes_channel')
+        
+      if (buzzesChannel) supabase.removeChannel(buzzesChannel);
+      buzzesChannel = supabase.channel('buzzes_channel')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
           fetchBuzz
         ).subscribe();
-
-      supabase.channel('participants_channel')
+        
+      if (participantsChannel) supabase.removeChannel(participantsChannel);
+      participantsChannel = supabase.channel('participants_channel')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` },
@@ -917,11 +936,13 @@
         updateData[timeField] = nowISO;
         updateData[durationField] = duration;
 
-        if (isAnswer && duration > 0) {
-          await supabase.from('answers').delete().eq('room_code', currentRoom);
-        }
-        if (!isAnswer && duration > 0) {
-          await supabase.from('buzzes').delete().eq('room_code', currentRoom);
+        // Nếu mở có giới hạn, reset data ngay khi mở (tránh trường hợp quên reset)
+        if (duration > 0) {
+            if (isAnswer) {
+                await supabase.from('answers').delete().eq('room_code', currentRoom);
+            } else {
+                await supabase.from('buzzes').delete().eq('room_code', currentRoom);
+            }
         }
 
       } else if (status === 'locked') {
@@ -940,6 +961,7 @@
 
       let table = isAnswer ? 'answers' : 'buzzes';
       let roomUpdate = isAnswer ?
+        // QUAN TRỌNG: Reset đáp án cần KHÓA trạng thái phòng và reset thời gian mở!
         { answer_open_time: null, answer_duration: 0, answer_status: 'locked' } :
         { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
 
@@ -947,18 +969,16 @@
       let errorMsg = isAnswer ? "Lỗi reset đáp án!" : "Lỗi reset chuông!";
 
       // BƯỚC 1: CẬP NHẬT TRẠNG THÁI PHÒNG VÀ RESET THỜI GIAN
-      // Việc này sẽ kích hoạt Realtime cho tất cả các Host/Manager khác và Result.html
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
       if (roomError) return showPopup(errorMsg + " (Lỗi cập nhật phòng)", "error");
 
       // BƯỚC 2: XÓA DỮ LIỆU ĐÁP ÁN/CHUÔNG
-      // Việc này sẽ kích hoạt Realtime cho tất cả các Host/Manager (fetchAnswers/fetchBuzz)
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
 
       if (dataError) {
         showPopup(errorMsg + " (Lỗi xóa dữ liệu)", "error");
       } else {
-        // Cập nhật trạng thái cục bộ ngay lập tức cho máy đang thao tác
+        // Cập nhật trạng thái cục bộ ngay lập tức (Realtime sẽ cập nhật các máy khác)
         if (isAnswer) {
           answers = [];
           answerStartTime = 0;

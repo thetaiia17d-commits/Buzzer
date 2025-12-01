@@ -74,6 +74,8 @@
         
         // Kênh realtime
         let roomChannel = null;
+        let answersChannel = null; // SỬA: Thêm biến cho kênh answers
+        let participantsChannel = null; // SỬA: Thêm biến cho kênh participants
 
         // --- UTILS ---
         function getQueryVariable(variable) {
@@ -111,7 +113,9 @@
                 displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             } else if (sortOption === "join") {
                 // Tạo một mảng chứa tên user theo thứ tự join (lọc trùng lặp)
-                const uniqueNamesOrder = Array.from(new Set(allParticipants.map(p => p.name)));
+                // Lọc bỏ user tạm thời (SYNC_TIME_)
+                const realParticipants = allParticipants.filter(p => !p.name.startsWith("SYNC_TIME_"));
+                const uniqueNamesOrder = Array.from(new Set(realParticipants.map(p => p.name)));
 
                 displayData.sort((a, b) => {
                     const idxA = uniqueNamesOrder.indexOf(a.name);
@@ -132,12 +136,16 @@
                     diff = (submitTime - roomStartTime) / 1000;
                 } else if (!roomStartTime && submitTime) {
                     // Trường hợp mở vĩnh viễn, vẫn lấy thời gian từ lúc gửi đầu tiên
-                    const minTime = Math.min(...displayData.map(d => new Date(d.created_at).getTime()));
-                    if(submitTime >= minTime) {
+                    // SỬA LỖI: Tránh tính thời gian từ lúc Host/Manager mở panel nếu chưa có answer_open_time
+                    // Nếu roomStartTime = 0 (chưa mở), không tính diff.
+                    const minTime = Math.min(...answers.map(d => new Date(d.created_at).getTime()));
+                    if(minTime > 0 && submitTime >= minTime) {
                          diff = (submitTime - minTime) / 1000;
                     }
+                    if(roomStartTime === 0) diff = 0; // Đảm bảo không tính thời gian nếu Host chưa bấm mở
                 }
                 
+                // Hiển thị 'N/A' nếu không tính được thời gian hợp lệ hoặc roomStartTime = 0
                 const timeStr = diff > 0 ? diff.toFixed(3) + 's' : 'N/A';
 
                 const div = document.createElement('div');
@@ -147,7 +155,7 @@
             });
 
             if (displayData.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding: 20px;">Chưa có đáp án nào được gửi.</div>';
+                container.innerHTML = '<div style="text-align:center; padding: 20px;font-weight:bold;">Chưa có đáp án nào được gửi.</div>';
             }
         }
 
@@ -192,9 +200,8 @@
 
         // --- REALTIME (ĐÃ SỬA) ---
         function subscribeRealtime() {
+            // 1. Kênh lắng nghe trạng thái phòng
             if (roomChannel) supabase.removeChannel(roomChannel);
-            
-            // Kênh lắng nghe thay đổi trạng thái phòng (để lấy roomStartTime mới)
             roomChannel = supabase.channel('room_channel_result')
                 .on(
                     'postgres_changes',
@@ -202,12 +209,22 @@
                     (payload) => handleRoomUpdate(payload.new)
                 ).subscribe();
                 
-            // Kênh lắng nghe thay đổi bảng answers (ĐÃ THÊM: để cập nhật khi có reset)
-            supabase.channel('answers_channel_result')
+            // 2. Kênh lắng nghe thay đổi bảng answers (SỬA: Gỡ bỏ và đăng ký lại)
+            if (answersChannel) supabase.removeChannel(answersChannel);
+            answersChannel = supabase.channel('answers_channel_result')
                 .on(
                     'postgres_changes',
                     { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${myRoom}` },
                     fetchAnswers // Sẽ được gọi khi có INSERT (gửi đáp án) hoặc DELETE (reset)
+                ).subscribe();
+                
+            // 3. Kênh lắng nghe thay đổi bảng participants (SỬA: Để cập nhật thứ tự join)
+            if (participantsChannel) supabase.removeChannel(participantsChannel);
+            participantsChannel = supabase.channel('participants_channel_result')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${myRoom}` },
+                    fetchUsers
                 ).subscribe();
         }
 
