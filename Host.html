@@ -789,39 +789,54 @@
     }
 
     function handleRoomUpdate(room) {
+      // Lưu lại giá trị buzzStartTime cũ để so sánh
+      const oldBuzzStartTime = buzzStartTime;
+
       lockedAnswer = room.answer_status === 'locked';
       lockedBuzz = room.buzz_status === 'locked';
 
-      // Xử lý Reset (Khi open_time bị xóa về null)
+      // Xử lý Đáp án (Giữ nguyên)
       if (!room.answer_open_time && room.answer_status === 'locked') {
-        // Chỉ reset khi thực sự không có thời gian
         answerStartTime = 0;
         answerDurationLimit = 0;
         answerEndTime = 0;
-        answers = [];
+        answers = []; 
         renderAnswers();
-        fetchAnswers(); 
+        fetchAnswers();
       } else {
-        // Nếu có thời gian (dù locked hay open), vẫn giữ để tính toán
         answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
       }
 
-      if (!room.buzz_open_time && room.buzz_status === 'locked') {
-        buzzStartTime = 0;
-        buzzDurationLimit = 0;
-        buzzEndTime = 0;
-        buzzOrder = [];
-        renderBuzz();
-        fetchBuzz();
-      } else {
-        // Nếu có thời gian (dù locked hay open), vẫn giữ để tính toán cột "Thời gian"
-        buzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
-        buzzDurationLimit = room.buzz_duration || 0;
-        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
-      }
+      // --- LOGIC ĐÃ SỬA: Xử lý trạng thái Chuông (đảm bảo xóa bảng khi có Reset) ---
+      
+      const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
+      const buzzDuration = room.buzz_duration || 0;
+      
+      // Cờ phát hiện sự thay đổi trạng thái (Bắt đầu/Reset)
+      const isStatusChanged = newBuzzStartTime !== oldBuzzStartTime;
 
+      // Cập nhật các biến global
+      buzzStartTime = newBuzzStartTime;
+      buzzDurationLimit = buzzDuration;
+      buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+
+      if (isStatusChanged) {
+          // Khi có thay đổi thời gian bắt đầu (bao gồm Reset Locked/Reset Permanent)
+          buzzOrder = []; 
+          renderBuzz(); // Xóa sạch bảng hiển thị ngay lập tức
+          fetchBuzz(); // Tải lại data (sẽ là data trống sau khi Reset)
+      } else if (!room.buzz_open_time && room.buzz_status === 'locked') {
+          // Trường hợp Reset về Locked hoặc khóa lại (đảm bảo local data = 0)
+          buzzStartTime = 0;
+          buzzDurationLimit = 0;
+          buzzEndTime = 0;
+          buzzOrder = []; 
+          renderBuzz();
+          fetchBuzz();
+      }
+      
       updateUI();
     }
 
@@ -953,28 +968,32 @@
       } else {
         const isPermanent = !lockedBuzz && buzzDurationLimit === 0;
         if (isPermanent) {
-            roomUpdate = {
-                buzz_open_time: getServerTimeNowISO(),
-                buzz_duration: 0,
-                buzz_status: 'open'
-            };
+          // YÊU CẦU: Nếu đang Mở Vĩnh Viễn, giữ trạng thái 'open', cập nhật thời gian bắt đầu mới.
+          roomUpdate = {
+            buzz_open_time: getServerTimeNowISO(), // Cập nhật thời gian mới
+            buzz_duration: 0,
+            buzz_status: 'open' // Giữ nguyên Mở vĩnh viễn
+          };
         } else {
-            // Reset chuông: Xóa thời gian bắt đầu
-            roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
+          // Trường hợp Khóa hoặc Mở giới hạn: Reset về Khóa
+          roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
         }
       }
 
       let successMsg = isAnswer ? "Đã xóa hết đáp án và khóa!" : "Đã xóa hết chuông (Reset)!";
       let errorMsg = isAnswer ? "Lỗi reset đáp án!" : "Lỗi reset chuông!";
 
+      // 1. Cập nhật trạng thái phòng (gửi tín hiệu Reset/Reopen)
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
       if (roomError) return showPopup(errorMsg, "error");
 
+      // 2. LUÔN XÓA DỮ LIỆU CHUÔNG (Đảm bảo bảng kết quả trống trên mọi máy)
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
 
       if (dataError) {
         showPopup(errorMsg, "error");
       } else {
+        // 3. Cập nhật dữ liệu local trên máy này
         if (isAnswer) {
           answers = [];
           answerStartTime = 0;
@@ -984,20 +1003,19 @@
           renderAnswers();
         } else {
           buzzOrder = [];
-          if (isAnswer === false) { 
-             const isPermanent = !lockedBuzz && buzzDurationLimit === 0;
-             if (isPermanent) {
-                 buzzStartTime = Date.now() + serverTimeOffset;
-                 buzzDurationLimit = 0;
-                 buzzEndTime = 0;
-                 lockedBuzz = false;
-             } else {
-                 buzzStartTime = 0;
-                 buzzDurationLimit = 0;
-                 buzzEndTime = 0;
-                 lockedBuzz = true;
-             }
+
+          // SỬA ĐỔI: Cập nhật biến local dựa trên roomUpdate đã gửi lên DB để đồng bộ
+          buzzDurationLimit = roomUpdate.buzz_duration;
+          lockedBuzz = roomUpdate.buzz_status === 'locked';
+
+          if (roomUpdate.buzz_open_time) {
+            buzzStartTime = new Date(roomUpdate.buzz_open_time).getTime();
+            buzzEndTime = buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+          } else {
+            buzzStartTime = 0;
+            buzzEndTime = 0;
           }
+
           renderBuzz();
         }
         updateUI();
