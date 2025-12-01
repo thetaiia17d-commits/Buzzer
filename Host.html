@@ -820,6 +820,7 @@
     function subscribeRealtime() {
       if (roomChannel) supabase.removeChannel(roomChannel);
 
+      // 1. Đăng ký sự hiện diện (Presence) với tên của tôi là khóa (key)
       roomChannel = supabase.channel('room-' + currentRoom, { config: { presence: { key: myName } } });
 
       roomChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` },
@@ -836,25 +837,43 @@
           fetchBuzz)
         .subscribe();
 
+      // Khi có thay đổi trong bảng participants (fetchUsers sẽ được gọi để cập nhật danh sách)
       supabase.channel('participants_channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` },
           fetchUsers)
         .subscribe();
 
+      // 2. Lắng nghe sự kiện rời khỏi (leave) từ tính năng Presence và track sự hiện diện của chính mình
       roomChannel.on('presence', { event: 'leave' }, async (payload) => {
-        const userLeft = payload.left.map(p => p.key);
-        userLeft.forEach(async (name) => {
-          if (name === myName) return;
+        const usersLeftKeys = payload.left.map(p => p.key);
+
+        console.log(`[PRESENCE] User(s) left: ${usersLeftKeys.join(', ')}`);
+
+        // Duyệt qua từng người dùng đã rời đi
+        usersLeftKeys.forEach(async (name) => {
+          // Bỏ qua các user đồng bộ thời gian (nếu có)
           if (name.startsWith("SYNC_TIME_")) return;
 
+          // 3. Xóa người dùng đó khỏi bảng 'participants'
           const { error } = await supabase.from('participants')
             .delete()
             .eq('room_code', currentRoom)
             .eq('name', name);
 
-          if (error) console.error("Error deleting participant:", error);
+          if (error) {
+            console.error(`Error deleting participant ${name} on leave:`, error);
+          } else {
+            console.log(`Successfully deleted participant ${name} on leave.`);
+          }
         });
-      }).subscribe();
+        // Phải đăng ký sự hiện diện mới có thể lắng nghe sự kiện leave và track sự hiện diện của chính mình
+      }).subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // Gửi trạng thái hiện tại (online) lên kênh
+          const { error } = await roomChannel.track({ user: myName, role: myRole });
+          if (error) console.error("Error tracking presence:", error);
+        }
+      });
     }
 
 
@@ -866,10 +885,7 @@
       myRole = role;
       if (roomInfo) roomInfo.innerText = `Phòng: ${code} | Vai trò: ${role === 'host' ? 'Host' : 'Quản lý'} (${name})`;
 
-      // Lưu trạng thái phòng vào localStorage để tự động kết nối lại
-      localStorage.setItem('lastRoomCode', code);
-      localStorage.setItem('lastName', name);
-      localStorage.setItem('lastRole', role);
+      // ĐÃ XÓA logic lưu trạng thái phòng vào localStorage để không tự động kết nối lại khi reload
 
       syncServerTime().then(() => {
         fetchInitialData();
@@ -1176,11 +1192,7 @@
         resetBuzz.onclick = () => resetRoomData(false);
       }
 
-      // --- LOGIC TỰ ĐỘNG VÀO PHÒNG (Đã sửa lỗi) ---
-      const roomCode = localStorage.getItem('lastRoomCode');
-      const savedName = localStorage.getItem('lastName');
-      const savedRole = localStorage.getItem('lastRole');
-
+      // --- LOGIC TỰ ĐỘNG VÀO PHÒNG (ĐÃ XÓA) ---
       // Xóa các ID cũ không dùng nữa (để tránh lỗi)
       localStorage.removeItem('btnOpenAnswer');
       localStorage.removeItem('btnCloseAnswer');
@@ -1188,83 +1200,13 @@
       localStorage.removeItem('btnOpenBuzz');
       localStorage.removeItem('btnCloseBuzz');
       localStorage.removeItem('btnResetBuzz');
-
-      if (roomCode && savedName && savedRole) {
-        // Kiểm tra room_code có phải là số hay không để đảm bảo an toàn
-        if (!isNaN(parseInt(roomCode))) {
-          setupRoom(parseInt(roomCode), savedName, savedRole);
-        } else {
-          // Xóa dữ liệu cũ nếu không hợp lệ
-          localStorage.removeItem('lastRoomCode');
-          localStorage.removeItem('lastName');
-          localStorage.removeItem('lastRole');
-        }
-      }
-
+      localStorage.removeItem('lastRoomCode');
+      localStorage.removeItem('lastName');
+      localStorage.removeItem('lastRole');
+      
       // Tạo hàng mặc định cho pop-up Bổ sung ngay khi tải trang
       generateAddRows();
     };
-
-    function subscribeRealtime() {
-      if (roomChannel) supabase.removeChannel(roomChannel);
-
-      // 1. Đăng ký sự hiện diện (Presence) với tên của tôi là khóa (key)
-      roomChannel = supabase.channel('room-' + currentRoom, { config: { presence: { key: myName } } });
-
-      roomChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` },
-        (payload) => handleRoomUpdate(payload.new)
-      ).subscribe();
-
-      supabase.channel('answers_channel')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
-          fetchAnswers)
-        .subscribe();
-
-      supabase.channel('buzzes_channel')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
-          fetchBuzz)
-        .subscribe();
-
-      // Khi có thay đổi trong bảng participants (fetchUsers sẽ được gọi để cập nhật danh sách)
-      supabase.channel('participants_channel')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` },
-          fetchUsers)
-        .subscribe();
-
-      // 2. Lắng nghe sự kiện rời khỏi (leave) từ tính năng Presence
-      roomChannel.on('presence', { event: 'leave' }, async (payload) => {
-        const usersLeftKeys = payload.left.map(p => p.key); // Danh sách tên người dùng vừa mất kết nối
-
-        console.log(`[PRESENCE] User(s) left: ${usersLeftKeys.join(', ')}`); // Ghi log
-
-        // Duyệt qua từng người dùng đã rời đi
-        usersLeftKeys.forEach(async (name) => {
-          // Bỏ qua các user đồng bộ thời gian (nếu có)
-          if (name.startsWith("SYNC_TIME_")) return;
-
-          // 3. Xóa người dùng đó khỏi bảng 'participants'
-          const { error } = await supabase.from('participants')
-            .delete()
-            .eq('room_code', currentRoom)
-            .eq('name', name);
-
-          if (error) {
-            console.error(`Error deleting participant ${name} on leave:`, error);
-            // showPopup(`Lỗi xóa người dùng ${name} khỏi DB!`, "error"); // Có thể ẩn cảnh báo này để tránh spam pop-up
-          } else {
-            console.log(`Successfully deleted participant ${name} on leave.`);
-            // Không cần gọi fetchUsers() vì postgres_changes event cho bảng participants đã lo việc này
-          }
-        });
-        // Phải đăng ký sự hiện diện mới có thể lắng nghe sự kiện leave
-      }).subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          // Gửi trạng thái hiện tại (online) lên kênh
-          const { error } = await roomChannel.track({ user: myName, role: myRole });
-          if (error) console.error("Error tracking presence:", error);
-        }
-      });
-    }
   </script>
 </body>
 
