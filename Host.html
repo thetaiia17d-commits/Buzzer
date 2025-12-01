@@ -126,6 +126,7 @@
     button:hover {
       background: #ff00cc !important;
       color: white !important;
+      /* Đã chỉnh màu hover để nhất quán */
     }
 
     .status-box {
@@ -931,8 +932,11 @@
       updateData[statusField] = status;
 
       if (status === 'open') {
-        const nowISO = getServerTimeNowISO();
-        updateData[timeField] = nowISO;
+        // --- SỬA ĐỔI: Bù trừ độ trễ mạng 500ms (0.5s) ---
+        const estimatedServerTime = Date.now() + serverTimeOffset - 500; // Trừ đi 500ms
+        const compensatedNowISO = new Date(estimatedServerTime).toISOString();
+
+        updateData[timeField] = compensatedNowISO; // Sử dụng thời gian đã bù trừ
         updateData[durationField] = duration;
 
         if (duration > 0) {
@@ -944,9 +948,7 @@
         }
 
       } else if (status === 'locked') {
-        // --- SỬA ĐỔI QUAN TRỌNG ---
         // Khi Khóa, KHÔNG xóa timeField (open_time) để máy Host/Result vẫn tính được thời gian
-        // updateData[timeField] = null;  <-- Đã xóa dòng này
         updateData[durationField] = 0;
       }
 
@@ -969,8 +971,12 @@
         const isPermanent = !lockedBuzz && buzzDurationLimit === 0;
         if (isPermanent) {
           // YÊU CẦU: Nếu đang Mở Vĩnh Viễn, giữ trạng thái 'open', cập nhật thời gian bắt đầu mới.
+          // SỬA ĐỔI: Bù trừ độ trễ mạng 500ms (0.5s) cho thời gian bắt đầu mới.
+          const estimatedServerTime = Date.now() + serverTimeOffset - 500;
+          const compensatedNowISO = new Date(estimatedServerTime).toISOString();
+          
           roomUpdate = {
-            buzz_open_time: getServerTimeNowISO(), // Cập nhật thời gian mới
+            buzz_open_time: compensatedNowISO, // Cập nhật thời gian mới đã bù trừ
             buzz_duration: 0,
             buzz_status: 'open' // Giữ nguyên Mở vĩnh viễn
           };
