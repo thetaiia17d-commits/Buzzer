@@ -996,15 +996,9 @@
       subscribeRealtime();
 
       updateCountdown();
-
-      // Đã loại bỏ việc lưu trạng thái phòng vào localStorage để tránh tự động rejoin khi reload
-      // localStorage.setItem('lastRoomCode', code);
-      // localStorage.setItem('lastName', name);
-      // localStorage.setItem('lastRole', role);
     }
 
-    // --- DATA RESET FUNCTION (MODIFIED ở lần 1) ---
-    // Hàm này chỉ thực hiện xóa dữ liệu, không thay đổi trạng thái phòng.
+    // --- DATA RESET FUNCTION (ĐÃ SỬA LỖI TẠI ĐÂY) ---
     async function resetRoomData(isAnswer) {
       if (!currentRoom) {
         showPopup("Chưa vào phòng!", "error");
@@ -1018,6 +1012,17 @@
         showPopup(`Lỗi reset ${msg}: ${deleteError.message}`, "error");
         return false;
       }
+
+      // ***** FIX START *****
+      // Cập nhật dữ liệu cục bộ và giao diện ngay lập tức sau khi xóa thành công
+      if (isAnswer) {
+        answers = [];
+        renderAnswers(); // Đảm bảo bảng đáp án trên máy Host/Manager xóa ngay
+      } else {
+        buzzOrder = [];
+        renderBuzz(); // Đảm bảo bảng chuông trên máy Host/Manager xóa ngay
+      }
+      // ***** FIX END *****
 
       showPopup(`Đã reset ${msg} thành công!`);
       return true;
@@ -1217,7 +1222,7 @@
         lockAnswers.onclick = () => updateRoomStatus('locked', 0, true);
       }
 
-      // MODIFIED: Reset Answers - chỉ xóa data, sau đó khóa lại (Đã sửa ở lần 1)
+      // MODIFIED: Reset Answers - chỉ xóa data, sau đó khóa lại
       const resetAnswers = document.getElementById("resetAnswers");
       if (resetAnswers) {
         resetAnswers.onclick = async () => {
