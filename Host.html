@@ -621,7 +621,7 @@
       displayData.forEach(item => {
         const row = tblAnswersBody.insertRow();
         row.insertCell().innerText = item.name;
-        // SỬA LỖI: Đã đổi item.answer thành item.answer_text
+        // Đã sửa lỗi đồng bộ tên trường: item.answer_text
         row.insertCell().innerText = item.answer_text || "[Không có đáp án]";
         row.insertCell().innerText = formatTimeDisplay(item.created_at, answerStartTime);
       });
@@ -755,7 +755,7 @@
         const baseTime = answerStartTime > 0 ? answerStartTime : Date.now() + serverTimeOffset;
 
         const created_at_ts = baseTime + timeDiff * 1000;
-        // SỬA LỖI: Đã đổi trường answer thành answer_text để đồng bộ với Contestant
+        // Đã sửa lỗi đồng bộ tên trường: answer_text
         return { room_code: currentRoom, name: name, answer_text: answer, created_at: new Date(created_at_ts).toISOString() };
       }).filter(item => item !== null);
     }
@@ -978,6 +978,7 @@
 
     // --- SETUP ROOM ---
     async function setupRoom(code, name, role) {
+      // Đóng các kênh realtime cũ
       if (roomChannel) supabase.removeChannel(roomChannel);
       if (answersChannel) supabase.removeChannel(answersChannel);
       if (buzzesChannel) supabase.removeChannel(buzzesChannel);
@@ -996,9 +997,10 @@
 
       updateCountdown();
 
-      localStorage.setItem('lastRoomCode', code);
-      localStorage.setItem('lastName', name);
-      localStorage.setItem('lastRole', role);
+      // Đã loại bỏ việc lưu trạng thái phòng vào localStorage để tránh tự động rejoin khi reload
+      // localStorage.setItem('lastRoomCode', code);
+      // localStorage.setItem('lastName', name);
+      // localStorage.setItem('lastRole', role);
     }
 
     // --- DATA RESET FUNCTION (MODIFIED ở lần 1) ---
@@ -1039,7 +1041,7 @@
         });
         let answersData = Array.from(latestAnswersMap.values()).map(item => ({
           Tên: item.name,
-          // SỬA LỖI: Đã đổi item.answer thành item.answer_text
+          // Đã sửa lỗi đồng bộ tên trường: item.answer_text
           Đáp_án: item.answer_text,
           Thời_gian_submit_raw: item.created_at,
           Thời_gian_từ_lúc_mở_chuông_s: formatTimeDisplay(item.created_at, answerStartTime)
@@ -1100,16 +1102,8 @@
       answerDurationInput = document.getElementById("answerDuration");
       buzzDurationInput = document.getElementById("buzzDuration");
 
-      // Khôi phục trạng thái cuối cùng
-      const lastCode = localStorage.getItem('lastRoomCode');
-      const lastName = localStorage.getItem('lastName');
-      const lastRole = localStorage.getItem('lastRole');
-      if (lastCode && lastName && lastRole) {
-        setupRoom(lastCode, lastName, lastRole);
-        showPopup(`Đã tham gia lại phòng ${lastCode} (${lastRole})`);
-      } else {
-        document.getElementById("roomInfo").innerText = "Chưa tham gia phòng!";
-      }
+      // Thay đổi: Luôn trở về trạng thái mặc định (Chưa tham gia phòng) khi tải lại trang
+      document.getElementById("roomInfo").innerText = "Chưa tham gia phòng!";
 
       // --- BUTTON LISTENERS ---
       const btnCreate = document.getElementById("btnCreate");
