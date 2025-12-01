@@ -294,7 +294,8 @@
 
       const { error: insertError } = await supabase.from('participants').insert([{
         room_code: code,
-        name: name
+        name: name,
+        role: 'contestant'
       }]);
 
       if (insertError) return showPopup("Lỗi tham gia: " + insertError.message, "error");
@@ -441,13 +442,6 @@
     // Khi reload / tắt tab / đóng trình duyệt
     window.addEventListener("beforeunload", () => {
       leaveRoom();
-    });
-
-    // Khi chuyển tab / minimize / app sang nền
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") {
-        leaveRoom();
-      }
     });
   </script>
 </body>
