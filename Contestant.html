@@ -316,7 +316,7 @@
     function subscribeRealtime() {
         if (roomChannel) supabase.removeChannel(roomChannel);
         
-        roomChannel = supabase.channel('room-' + myRoom);
+        roomChannel = supabase.channel('room-' + myRoom, { config: { presence: { key: myName } } });
         
         roomChannel
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${myRoom}` },
