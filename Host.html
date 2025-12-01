@@ -548,10 +548,10 @@
         if (!aDisp || !bDisp) return;
 
         // --- ANSWER COUNTDOWN ---
-        if (!lockedAnswer && answerDurationLimit > 0 && answerEndTime > 0) {
+        if (answerStartTime > 0 && answerDurationLimit > 0) { // Chỉ tính nếu có thời gian bắt đầu
           const remain = answerEndTime - now;
           if (remain <= 0) {
-            aDisp.innerText = "ĐÃ HẾT GIỜ! Đang khóa...";
+            aDisp.innerText = lockedAnswer ? "ĐÃ HẾT GIỜ! Đã khóa" : "ĐÃ HẾT GIỜ! Đang khóa...";
             if (!lockedAnswer) {
               // Cập nhật trạng thái khóa, KHÔNG RESET DURATION
               await updateRoomStatus('locked', answerDurationLimit, true);
@@ -559,17 +559,17 @@
           } else {
             aDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
           }
-        } else if (!lockedAnswer) {
+        } else if (!lockedAnswer) { // Mở vĩnh viễn
           aDisp.innerText = "Đang mở (Không giới hạn)";
         } else {
           aDisp.innerText = "";
         }
 
         // --- BUZZ COUNTDOWN ---
-        if (!lockedBuzz && buzzDurationLimit > 0 && buzzEndTime > 0) {
+        if (buzzStartTime > 0 && buzzDurationLimit > 0) { // Chỉ tính nếu có thời gian bắt đầu
           const remain = buzzEndTime - now;
           if (remain <= 0) {
-            bDisp.innerText = "ĐÃ HẾT GIỜ! Đang khóa...";
+            bDisp.innerText = lockedBuzz ? "ĐÃ HẾT GIỜ! Đã khóa" : "ĐÃ HẾT GIỜ! Đang khóa...";
             if (!lockedBuzz) {
               // Cập nhật trạng thái khóa, KHÔNG RESET DURATION
               await updateRoomStatus('locked', buzzDurationLimit, false);
@@ -850,18 +850,15 @@
       lockedAnswer = room.answer_status !== 'open';
       document.getElementById("answerDuration").value = room.answer_duration > 0 ? room.answer_duration : 30;
 
-      if (lockedAnswer) {
-        answerStartTime = 0;
-        answerDurationLimit = 0;
-        answerEndTime = 0;
-      } else {
-        answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-        answerDurationLimit = room.answer_duration || 0;
-        answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
-        if (answerDurationLimit > 0 && answerEndTime < Date.now() + serverTimeOffset) {
+      // LUÔN CẬP NHẬT answerStartTime DỰA TRÊN DB (không reset về 0 khi khóa)
+      answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+      answerDurationLimit = room.answer_duration || 0;
+      answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
+
+      // Xử lý hết giờ nếu đang mở (chỉ khi đang mở)
+      if (!lockedAnswer && answerDurationLimit > 0 && answerEndTime < Date.now() + serverTimeOffset) {
           // Xử lý khi hết giờ trên host
           updateRoomStatus('locked', answerDurationInput.value, true);
-        }
       }
 
       // THÊM LOGIC NÀY: Nếu trạng thái chuyển từ MỞ -> KHÓA (sau khi hết giờ/Host Khóa/Host Reset)
@@ -878,18 +875,15 @@
 
       isBuzzPermanentOpen = (room.buzz_status === 'open' && (room.buzz_duration === 0 || room.buzz_duration === null));
 
-      if (lockedBuzz) {
-        buzzStartTime = 0;
-        buzzDurationLimit = 0;
-        buzzEndTime = 0;
-      } else {
-        buzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
-        buzzDurationLimit = room.buzz_duration || 0;
-        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
-        if (buzzDurationLimit > 0 && buzzEndTime < Date.now() + serverTimeOffset) {
+      // LUÔN CẬP NHẬT buzzStartTime DỰA TRÊN DB (không reset về 0 khi khóa)
+      buzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
+      buzzDurationLimit = room.buzz_duration || 0;
+      buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+
+      // Xử lý hết giờ nếu đang mở (chỉ khi đang mở)
+      if (!lockedBuzz && buzzDurationLimit > 0 && buzzEndTime < Date.now() + serverTimeOffset) {
           // Xử lý khi hết giờ trên host
           updateRoomStatus('locked', buzzDurationInput.value, false);
-        }
       }
 
       // THÊM LOGIC NÀY: Nếu trạng thái chuyển từ MỞ -> KHÓA (sau khi hết giờ/Host Khóa/Host Reset)
@@ -901,7 +895,7 @@
       updateUI();
     }
 
-    // --- ROOM CONTROL (ĐÃ SỬA LỖI GIỮ LẠI DURATION) ---
+    // --- ROOM CONTROL (ĐÃ SỬA LỖI GIỮ LẠI DURATION & TIME) ---
     async function updateRoomStatus(status, duration, isAnswer) {
       if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
       if (myRole !== 'host' && myRole !== 'manager') return showPopup("Chỉ Host hoặc Quản lý mới được điều khiển!", "error");
@@ -933,7 +927,7 @@
           }
         }
       } else if (status === 'locked') {
-        updateData[timeField] = null;
+        // Đã sửa: KHÔNG đặt timeField = null để giữ lại thời gian bắt đầu
         // SỬA LỖI: KHÔNG đặt duration = 0. Giữ nguyên duration trên DB
         // Điều này đảm bảo khi mở lại hoặc hết giờ, giá trị cũ vẫn còn.
       }
@@ -1039,7 +1033,7 @@
       }
 
       // Tín hiệu đồng bộ cho các máy khác: 
-      // Cập nhật lại trạng thái (locked/open), điều này sẽ kích hoạt realtime trên các máy khác 
+      // Cập nhật lại trạng thái (locked), điều này sẽ kích hoạt realtime trên các máy khác 
       // để fetch data, lúc này data là rỗng nên sẽ đồng bộ xóa bảng.
       // Dùng giá trị duration hiện tại.
       const currentDuration = isAnswer ? answerDurationInput.value : buzzDurationInput.value;
