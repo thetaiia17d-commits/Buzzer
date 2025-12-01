@@ -605,22 +605,22 @@
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
       const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      
+
       // Lọc trùng tên trong danh sách chuông
       const uniqueBuzzMap = new Map();
       sorted.forEach(item => {
-          if (!uniqueBuzzMap.has(item.name)) {
-              uniqueBuzzMap.set(item.name, item);
-          }
+        if (!uniqueBuzzMap.has(item.name)) {
+          uniqueBuzzMap.set(item.name, item);
+        }
       });
-      
+
       Array.from(uniqueBuzzMap.values()).forEach(item => {
         const row = tblBuzzBody.insertRow();
         row.insertCell().innerText = item.name;
         row.insertCell().innerText = formatTimeDisplay(item.created_at, buzzStartTime);
       });
     }
-    
+
     // --- ĐÃ SỬA: HÀM NÀY SẼ LỌC TRÙNG LẶP THEO TÊN TRƯỚC KHI HIỂN THỊ ---
     function renderUserListPopup() {
       const ul = document.querySelector("#listPopup ul");
@@ -630,14 +630,14 @@
 
       // Sử dụng Map để lọc ra các participant duy nhất theo tên.
       const uniqueParticipantsMap = new Map();
-      
+
       allParticipants.forEach(u => {
         // Bỏ qua các hàng tạm thời
         if (u.name.startsWith("SYNC_TIME_")) return;
 
         // Nếu tên chưa tồn tại trong Map, thêm vào. (Chỉ lấy bản ghi đầu tiên/duy nhất theo tên)
         if (!uniqueParticipantsMap.has(u.name)) {
-            uniqueParticipantsMap.set(u.name, u);
+          uniqueParticipantsMap.set(u.name, u);
         }
       });
 
@@ -648,7 +648,7 @@
       displayUsers.forEach(u => {
         const li = document.createElement("li");
         let roleSpan = '';
-        
+
         // Xác định vai trò để hiển thị màu sắc/tên
         if (u.role === 'host') {
           roleSpan = '<span class="role-host" style="font-weight: bold; color: green;">(Host)</span>';
@@ -657,7 +657,7 @@
         } else {
           roleSpan = '<span class="role-contestant" style="font-weight: bold;">(Thí sinh)</span>';
         }
-        
+
         li.innerHTML = `<b>${u.name}</b> ${roleSpan}`;
         ul.appendChild(li);
       });
@@ -868,7 +868,7 @@
             .delete()
             .eq('room_code', currentRoom)
             .eq('name', name);
-            
+
           if (error) console.error(error.message);
         }
       });
@@ -939,16 +939,26 @@
       if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
 
       let table = isAnswer ? 'answers' : 'buzzes';
-      let roomUpdate = isAnswer ? { answer_open_time: null, answer_duration: 0, answer_status: 'locked' } : { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
+      let roomUpdate = isAnswer ?
+        { answer_open_time: null, answer_duration: 0, answer_status: 'locked' } :
+        { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
+
       let successMsg = isAnswer ? "Đã xóa hết đáp án và khóa!" : "Đã xóa hết chuông và khóa!";
       let errorMsg = isAnswer ? "Lỗi reset đáp án!" : "Lỗi reset chuông!";
 
-      const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
+      // BƯỚC 1: CẬP NHẬT TRẠNG THÁI PHÒNG VÀ RESET THỜI GIAN
+      // Việc này sẽ kích hoạt Realtime cho tất cả các Host/Manager khác và Result.html
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
+      if (roomError) return showPopup(errorMsg + " (Lỗi cập nhật phòng)", "error");
 
-      if (dataError || roomError) {
-        showPopup(errorMsg, "error");
+      // BƯỚC 2: XÓA DỮ LIỆU ĐÁP ÁN/CHUÔNG
+      // Việc này sẽ kích hoạt Realtime cho tất cả các Host/Manager (fetchAnswers/fetchBuzz)
+      const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
+
+      if (dataError) {
+        showPopup(errorMsg + " (Lỗi xóa dữ liệu)", "error");
       } else {
+        // Cập nhật trạng thái cục bộ ngay lập tức cho máy đang thao tác
         if (isAnswer) {
           answers = [];
           answerStartTime = 0;
@@ -968,7 +978,6 @@
         showPopup(successMsg);
       }
     }
-
 
     // --- WINDOW ONLOAD ---
     window.onload = () => {
@@ -1145,13 +1154,13 @@
           ];
           const uniqueBuzzMap = new Map();
           [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-              .forEach(b => {
-                  if (!uniqueBuzzMap.has(b.name)) uniqueBuzzMap.set(b.name, b);
-              });
-              
+            .forEach(b => {
+              if (!uniqueBuzzMap.has(b.name)) uniqueBuzzMap.set(b.name, b);
+            });
+
           Array.from(uniqueBuzzMap.values())
             .forEach(b => wsData2.push([b.name, formatTimeDisplay(b.created_at, buzzStartTime)]));
-            
+
           const ws2 = XLSX.utils.aoa_to_sheet(ws2);
           XLSX.utils.book_append_sheet(wb, ws2, "Chuong");
 
