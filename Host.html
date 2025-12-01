@@ -841,7 +841,12 @@
       if (!room) return;
       document.getElementById("roomInfo").innerText = `Phòng: ${currentRoom} | Host: ${room.host_id || 'N/A'}`;
 
+      // Lấy trạng thái cũ trước khi cập nhật
+      const wasLockedAnswer = lockedAnswer;
+      const wasLockedBuzz = lockedBuzz;
+
       // --- Answer status ---
+      // Cập nhật trạng thái mới
       lockedAnswer = room.answer_status !== 'open';
       document.getElementById("answerDuration").value = room.answer_duration > 0 ? room.answer_duration : 30;
 
@@ -855,12 +860,19 @@
         answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
         if (answerDurationLimit > 0 && answerEndTime < Date.now() + serverTimeOffset) {
           // Xử lý khi hết giờ trên host
-          // Gửi lại updateRoomStatus nhưng giữ nguyên duration
-          updateRoomStatus('locked', answerDurationInput.value, true); 
+          updateRoomStatus('locked', answerDurationInput.value, true);
         }
       }
 
+      // THÊM LOGIC NÀY: Nếu trạng thái chuyển từ MỞ -> KHÓA (sau khi hết giờ/Host Khóa/Host Reset)
+      // Thì TỰ ĐỘNG FETCH DATA (dù đã có Realtime cho bảng answers/buzzes) để đảm bảo đồng bộ
+      if (!wasLockedAnswer && lockedAnswer) {
+        fetchAnswers();
+      }
+
+
       // --- Buzz status ---
+      // Cập nhật trạng thái mới
       lockedBuzz = room.buzz_status !== 'open';
       document.getElementById("buzzDuration").value = room.buzz_duration > 0 ? room.buzz_duration : 5;
 
@@ -876,9 +888,14 @@
         buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
         if (buzzDurationLimit > 0 && buzzEndTime < Date.now() + serverTimeOffset) {
           // Xử lý khi hết giờ trên host
-          // Gửi lại updateRoomStatus nhưng giữ nguyên duration
           updateRoomStatus('locked', buzzDurationInput.value, false);
         }
+      }
+
+      // THÊM LOGIC NÀY: Nếu trạng thái chuyển từ MỞ -> KHÓA (sau khi hết giờ/Host Khóa/Host Reset)
+      // Thì TỰ ĐỘNG FETCH DATA để đảm bảo đồng bộ
+      if (!wasLockedBuzz && lockedBuzz) {
+        fetchBuzz();
       }
 
       updateUI();
@@ -1027,7 +1044,7 @@
       // Dùng giá trị duration hiện tại.
       const currentDuration = isAnswer ? answerDurationInput.value : buzzDurationInput.value;
       await updateRoomStatus('locked', currentDuration, isAnswer);
-      
+
       showPopup(`Đã reset ${msg} thành công!`);
       return true;
     }
