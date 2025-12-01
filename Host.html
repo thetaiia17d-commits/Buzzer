@@ -1206,6 +1206,31 @@
       // Tạo hàng mặc định cho pop-up Bổ sung ngay khi tải trang
       generateAddRows();
     };
+
+    // =================== AUTO REMOVE WHEN HOST/MANAGER CLOSE TAB ===================
+    async function leaveRoom() {
+      if (!currentRoom || !myName) return;
+
+      try {
+        await supabase
+          .from("participants")
+          .delete()
+          .eq("room_code", currentRoom)
+          .eq("name", myName);
+      } catch (err) {
+        console.warn("Leave error:", err.message);
+      }
+    }
+
+    window.addEventListener("beforeunload", () => {
+      leaveRoom();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        leaveRoom();
+      }
+    });
   </script>
 </body>
 
