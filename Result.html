@@ -115,9 +115,9 @@
                             if (payload.new.answer_open_time) {
                                 roomStartTime = new Date(payload.new.answer_open_time).getTime();
                             } else {
-                                // SỬA: Xử lý Reset (answer_open_time = null)
+                                // XỬ LÝ Reset (answer_open_time = null)
                                 roomStartTime = 0; // Reset thời gian bắt đầu
-                                answers = []; // **QUAN TRỌNG: Xóa dữ liệu cục bộ ngay lập tức**
+                                answers = []; // Xóa dữ liệu cục bộ ngay lập tức
                             }
                             render();
                         }
@@ -196,9 +196,14 @@
                 }
                 const timeStr = diff > 0 ? diff.toFixed(3) + 's' : 'N/A';
 
+                // --- SỬA LỖI Ở ĐÂY ---
+                // Tự động kiểm tra cả hai tên trường 'answer_text' và 'answer'
+                const answerText = item.answer_text || item.answer || "[Không có đáp án]";
+
                 const div = document.createElement('div');
                 div.className = 'result-row';
-                div.textContent = `${item.name} | ${item.answer_text} | ${timeStr}`;
+                // Sử dụng biến answerText để hiển thị đáp án
+                div.textContent = `${item.name} | ${answerText} | ${timeStr}`;
                 resultsContainer.appendChild(div);
             });
         }
