@@ -41,6 +41,17 @@
         <h2 style="margin: 0;">Kết quả</h2>
         <span id="roomStatus" style="color: blue;">Đang kết nối...</span>
     </div>
+
+    <div id="sortOptions"
+        style="font-family: Arial, sans-serif; margin-bottom: 10px; font-weight: bold; text-align: center; color: black; display: flex; justify-content: center; gap: 30px;">
+        <label style="cursor: pointer;">
+            <input type="radio" name="sortOption" value="join" onchange="render()"> <strong>Theo thứ tự vào phòng</strong>
+        </label>
+        <label style="cursor: pointer;">
+            <input type="radio" name="sortOption" value="time" checked onchange="render()"> <strong>Theo thời gian trả
+                lời</strong>
+        </label>
+    </div>
     <div id="resultsContainer">Đang tải...</div>
 
     <script>
@@ -54,7 +65,8 @@
         const roomStatus = document.getElementById('roomStatus');
 
         let answers = [];
-        let roomStartTime = null; 
+        let roomStartTime = null;
+        let allParticipants = []; 
 
         async function init() {
             if (!roomCode) {
@@ -63,14 +75,20 @@
             }
             roomStatus.innerText = "Phòng: " + roomCode;
 
+            // 1. Lấy thứ tự vào phòng
+            await fetchParticipants();
+
+            // 2. Lấy thời gian bắt đầu phòng
             const { data: room } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
             if (room) roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
 
+            // 3. Lấy và render kết quả ban đầu
             await fetchAndRender();
 
+            // 4. Đăng ký realtime
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
-                    () => { fetchAndRender(); }) 
+                    () => { fetchAndRender(); })
                 .subscribe();
 
             supabase.channel('room_channel')
@@ -78,18 +96,37 @@
                     (payload) => {
                         if (payload.new.answer_open_time) {
                             roomStartTime = new Date(payload.new.answer_open_time).getTime();
-                            render(); 
+                            render();
                         }
                     })
                 .subscribe();
+
+            // Thêm subscription cho danh sách người chơi để cập nhật thứ tự vào phòng
+            supabase.channel('participants_channel')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${roomCode}` },
+                    () => { fetchParticipants().then(render); })
+                .subscribe();
+        }
+
+        // Hàm lấy danh sách người chơi (thứ tự vào phòng)
+        async function fetchParticipants() {
+            const { data } = await supabase
+                .from('participants')
+                .select('name')
+                .eq('room_code', roomCode)
+                .order('created_at', { ascending: true }); 
+
+            if (data) {
+                // Loại bỏ user hệ thống (SYNC_TIME_)
+                allParticipants = data.filter(p => !p.name.startsWith("SYNC_TIME_"));
+            }
         }
 
         async function fetchAndRender() {
             const { data, error } = await supabase
                 .from('answers')
                 .select('*')
-                .eq('room_code', roomCode)
-                .order('created_at', { ascending: true }); 
+                .eq('room_code', roomCode); 
 
             if (data) {
                 answers = data;
@@ -108,17 +145,33 @@
             const latestAnswersMap = new Map();
             answers.forEach(item => {
                 const existing = latestAnswersMap.get(item.name);
-                // Dùng created_at để xác định câu trả lời mới nhất
                 if (!existing || new Date(item.created_at) > new Date(existing.created_at)) {
                     latestAnswersMap.set(item.name, item);
                 }
             });
-            // Chuyển về mảng và sắp xếp lại theo thời gian nộp
-            const sortedUnique = Array.from(latestAnswersMap.values())
-                                        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            let displayData = Array.from(latestAnswersMap.values());
+
+            // --- SẮP XẾP DỰA TRÊN Ô TÍCH CHỌN ---
+            const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
+
+            if (sortOption === "time") {
+                // Sắp xếp theo thời gian nộp đáp án (Nhanh nhất lên đầu)
+                displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            } else if (sortOption === "join") {
+                // Sắp xếp theo thứ tự vào phòng
+                const orderMap = {};
+                allParticipants.forEach((p, idx) => orderMap[p.name] = idx);
+
+                displayData.sort((a, b) => {
+                    const idxA = orderMap[a.name] !== undefined ? orderMap[a.name] : 9999;
+                    const idxB = orderMap[b.name] !== undefined ? orderMap[b.name] : 9999;
+                    return idxA - idxB;
+                });
+            }
 
 
-            sortedUnique.forEach(item => {
+            displayData.forEach(item => {
                 const submitTime = new Date(item.created_at).getTime();
                 let diff = 0;
                 if (roomStartTime && submitTime > roomStartTime) {
