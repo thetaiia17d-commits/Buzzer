@@ -119,7 +119,7 @@
                 return;
             }
             
-            // Nếu data rỗng (do Host reset), answers sẽ là mảng rỗng []
+            // Khi Host Reset -> data sẽ rỗng
             answers = data || [];
             render();
         }
@@ -127,7 +127,7 @@
         function render() {
             resultsContainer.innerHTML = '';
             
-            // Khi Reset, answers = [], đoạn code này sẽ chạy và hiển thị "Chưa có dữ liệu"
+            // Logic kiểm tra mảng rỗng để hiển thị thông báo
             if (answers.length === 0) {
                 resultsContainer.innerHTML = '<p style="text-align:center">Chưa có dữ liệu</p>';
                 return;
@@ -190,7 +190,7 @@
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
                     () => { 
-                        // Khi Host Reset -> sự kiện DELETE -> fetchAndRender lấy mảng rỗng -> render() xoá màn hình
+                        // Sự kiện DELETE xảy ra khi Host Reset -> buộc fetch lại
                         fetchAndRender(); 
                     })
                 .subscribe();
@@ -202,7 +202,8 @@
                         // Cập nhật roomStartTime
                         if ('answer_open_time' in payload.new) {
                             roomStartTime = payload.new.answer_open_time ? new Date(payload.new.answer_open_time).getTime() : 0;
-                            render(); 
+                            //ĐÃ SỬA: Thay render() bằng fetchAndRender() để đảm bảo đồng bộ dữ liệu sau khi Host Reset
+                            fetchAndRender(); 
                         }
                     })
                 .subscribe();
