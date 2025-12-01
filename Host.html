@@ -866,10 +866,9 @@
             console.log(`Successfully deleted participant ${name} on leave.`);
           }
         });
-        // Phải đăng ký sự hiện diện mới có thể lắng nghe sự kiện leave và track sự hiện diện của chính mình
       }).subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // Gửi trạng thái hiện tại (online) lên kênh
+          // Gửi trạng thái hiện tại (online) lên kênh. BẮT BUỘC để Host/Manager có thể nhận event 'leave' của người khác
           const { error } = await roomChannel.track({ user: myName, role: myRole });
           if (error) console.error("Error tracking presence:", error);
         }
@@ -1125,7 +1124,7 @@
           ];
           [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
             .forEach(b => wsData2.push([b.name, formatTimeDisplay(b.created_at, buzzStartTime)]));
-          const ws2 = XLSX.utils.aoa_to_sheet(wsData2);
+          const ws2 = XLSX.utils.aoa_to_sheet(ws2);
           XLSX.utils.book_append_sheet(wb, ws2, "Chuong");
 
           XLSX.writeFile(wb, `KetQua_${currentRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -1203,7 +1202,7 @@
       localStorage.removeItem('lastRoomCode');
       localStorage.removeItem('lastName');
       localStorage.removeItem('lastRole');
-      
+
       // Tạo hàng mặc định cho pop-up Bổ sung ngay khi tải trang
       generateAddRows();
     };
