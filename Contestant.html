@@ -395,17 +395,29 @@
       const text = answerTextArea.value.trim();
       if (!text) return showPopup("Nhập đáp án!", "error");
 
+      // 1. Cập nhật UI ngay lập tức: Khóa nút, xóa nội dung và thông báo
+      btnSend.disabled = true; // Khóa tạm thời nút Gửi
+      showPopup("Đang gửi..."); // Thông báo tạm thời
+      answerTextArea.value = "";
+      answerTextArea.focus();
+
+      // 2. Gửi dữ liệu lên server
       const { error } = await supabase.from('answers').insert([{
         room_code: myRoom,
         name: myName,
         answer_text: text
       }]);
 
-      if (error) showPopup("Lỗi gửi: " + error.message, "error");
-      else {
-        showPopup("Đã gửi!");
-        answerTextArea.value = "";
-        answerTextArea.focus();
+      // 3. Xử lý kết quả
+      if (!error) {
+        showPopup("Đã gửi!"); // Thông báo thành công cuối cùng
+        btnSend.disabled = false; // Mở lại nút
+      } else {
+        // Nếu có lỗi, hoàn tác và thông báo
+        showPopup("Lỗi gửi: " + error.message, "error");
+        answerTextArea.value = text; // Khôi phục đáp án đã nhập
+        btnSend.disabled = false; // Mở lại nút
+        console.error("Lỗi gửi đáp án:", error);
       }
     };
 
@@ -413,17 +425,23 @@
     btnBuzz.onclick = async () => {
       if (lockedBuzz || hasBuzzed) return;
 
+      // 1. Cập nhật UI và trạng thái ngay lập tức (Optimistic UI)
+      hasBuzzed = true;
+      updateBuzzUI(true);
+      showPopup("Đã bấm chuông!");
+      
+      // 2. Gửi dữ liệu lên server sau
       const { error } = await supabase.from('buzzes').insert([{
         room_code: myRoom,
         name: myName
       }]);
 
-      if (!error) {
-        hasBuzzed = true;
-        updateBuzzUI(true);
-        showPopup("Đã bấm chuông!");
-      } else {
+      if (error) {
+        // Xử lý lỗi (ít xảy ra): nếu gửi thất bại, hoàn tác UI
+        hasBuzzed = false;
+        updateBuzzUI(false); 
         showPopup("Lỗi bấm: " + error.message, "error");
+        console.error("Lỗi bấm chuông:", error);
       }
     };
 
