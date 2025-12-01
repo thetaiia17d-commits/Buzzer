@@ -583,9 +583,12 @@
         const realParticipants = allParticipants.filter(p => !p.name.startsWith("SYNC_TIME_"));
         realParticipants.forEach((p, idx) => orderMap[p.name] = idx);
 
+        // Lọc trùng tên trong list orderMap trước khi sắp xếp
+        const uniqueNamesOrder = Array.from(new Set(realParticipants.map(p => p.name)));
+
         displayData.sort((a, b) => {
-          const idxA = orderMap[a.name] !== undefined ? orderMap[a.name] : 9999;
-          const idxB = orderMap[b.name] !== undefined ? orderMap[b.name] : 9999;
+          const idxA = uniqueNamesOrder.indexOf(a.name);
+          const idxB = uniqueNamesOrder.indexOf(b.name);
           return idxA - idxB;
         });
       }
@@ -602,25 +605,51 @@
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
       const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      
+      // Lọc trùng tên trong danh sách chuông
+      const uniqueBuzzMap = new Map();
       sorted.forEach(item => {
+          if (!uniqueBuzzMap.has(item.name)) {
+              uniqueBuzzMap.set(item.name, item);
+          }
+      });
+      
+      Array.from(uniqueBuzzMap.values()).forEach(item => {
         const row = tblBuzzBody.insertRow();
         row.insertCell().innerText = item.name;
         row.insertCell().innerText = formatTimeDisplay(item.created_at, buzzStartTime);
       });
     }
-
+    
+    // --- ĐÃ SỬA: HÀM NÀY SẼ LỌC TRÙNG LẶP THEO TÊN TRƯỚC KHI HIỂN THỊ ---
     function renderUserListPopup() {
       const ul = document.querySelector("#listPopup ul");
       if (!ul) return;
 
       ul.innerHTML = "";
 
-      const realUsers = allParticipants.filter(u => !u.name.startsWith("SYNC_TIME_"));
-      const systemUsers = allParticipants.filter(u => u.name.startsWith("SYNC_TIME_"));
+      // Sử dụng Map để lọc ra các participant duy nhất theo tên.
+      const uniqueParticipantsMap = new Map();
+      
+      allParticipants.forEach(u => {
+        // Bỏ qua các hàng tạm thời
+        if (u.name.startsWith("SYNC_TIME_")) return;
 
-      const processUser = (u) => {
+        // Nếu tên chưa tồn tại trong Map, thêm vào. (Chỉ lấy bản ghi đầu tiên/duy nhất theo tên)
+        if (!uniqueParticipantsMap.has(u.name)) {
+            uniqueParticipantsMap.set(u.name, u);
+        }
+      });
+
+      // Chuyển Map thành Array và sắp xếp theo thời gian vào phòng (created_at)
+      let displayUsers = Array.from(uniqueParticipantsMap.values()).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      // Render danh sách user chính thức
+      displayUsers.forEach(u => {
         const li = document.createElement("li");
         let roleSpan = '';
+        
+        // Xác định vai trò để hiển thị màu sắc/tên
         if (u.role === 'host') {
           roleSpan = '<span class="role-host" style="font-weight: bold; color: green;">(Host)</span>';
         } else if (u.role === 'manager') {
@@ -628,16 +657,8 @@
         } else {
           roleSpan = '<span class="role-contestant" style="font-weight: bold;">(Thí sinh)</span>';
         }
+        
         li.innerHTML = `<b>${u.name}</b> ${roleSpan}`;
-        ul.appendChild(li);
-      };
-
-      realUsers.forEach(processUser);
-
-      systemUsers.forEach(u => {
-        const li = document.createElement("li");
-        li.style.cssText = "font-weight: bold; color: purple;";
-        li.innerText = u.name;
         ul.appendChild(li);
       });
     }
@@ -1000,7 +1021,6 @@
         };
       }
 
-      // --- Xử lý nút Xác nhận tham gia Quản lý ---
       const btnConfirmManager = document.getElementById("btnConfirmManager");
       if (btnConfirmManager) {
         btnConfirmManager.onclick = async () => {
@@ -1009,6 +1029,7 @@
           const joinPopup = document.getElementById("joinPopup");
 
           if (!codeStrInput || !nameInput) return showPopup("Thiếu trường nhập liệu!", "error");
+
           const codeStr = codeStrInput.value.trim();
           const name = nameInput.value.trim();
 
@@ -1122,8 +1143,15 @@
           const wsData2 = [
             ["Tên", "Thời gian bấm (s)"]
           ];
+          const uniqueBuzzMap = new Map();
           [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+              .forEach(b => {
+                  if (!uniqueBuzzMap.has(b.name)) uniqueBuzzMap.set(b.name, b);
+              });
+              
+          Array.from(uniqueBuzzMap.values())
             .forEach(b => wsData2.push([b.name, formatTimeDisplay(b.created_at, buzzStartTime)]));
+            
           const ws2 = XLSX.utils.aoa_to_sheet(ws2);
           XLSX.utils.book_append_sheet(wb, ws2, "Chuong");
 

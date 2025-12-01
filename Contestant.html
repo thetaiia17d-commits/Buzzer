@@ -264,8 +264,7 @@
       if (elementId === 'buzzCountdown') buzzInterval = interval;
     }
 
-    // --- THAM GIA PHÒNG (ĐÃ SỬA LOGIC) ---
-    // --- THAM GIA PHÒNG (CHIẾN THUẬT MỚI: INSERT TRƯỚC, CHECK SAU) ---
+    // --- THAM GIA PHÒNG (CHIẾN THUẬT: INSERT TRƯỚC, CHECK SAU) ---
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
@@ -279,7 +278,7 @@
       const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-      // 2. THỬ INSERT LUÔN (Nếu chưa có tên -> Thành công. Nếu có tên -> Báo lỗi Duplicate)
+      // 2. THỬ INSERT LUÔN
       const { error: insertError } = await supabase.from('participants').insert([{
         room_code: code,
         name: name,
