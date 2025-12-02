@@ -892,6 +892,8 @@
       const buzzDuration = room.buzz_duration || 0;
       
       const isBuzzOpenTimeChanged = newBuzzStartTime !== oldBuzzStartTime;
+      const isBuzzStatusChangedToLocked = room.buzz_status === 'locked' && (roomInfo ? roomInfo.buzz_status : 'locked') !== 'locked';
+      const isBuzzResetToPending = room.buzz_status === 'pending_open' && (roomInfo ? roomInfo.buzz_status : 'locked') !== 'pending_open';
 
       if (room.buzz_status === 'open') {
           buzzStartTime = newBuzzStartTime;
@@ -899,7 +901,7 @@
           buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
           
           const currentServerTime = Date.now() + serverTimeOffset;
-          if (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime) {
+          if (buzzDurationLimit > 0 && buzzEndTime > 0 && answerEndTime <= currentServerTime) {
               lockedBuzz = true;
           } else {
               lockedBuzz = false;
@@ -912,25 +914,17 @@
           lockedBuzz = true; 
       }
 
-      // Xử lý khi thí sinh kích hoạt lại chuông (từ 'pending_open' -> 'open')
-      if (isBuzzOpenTimeChanged) {
+      // Xử lý xóa data: Kích hoạt khi:
+      // 1. Chuông được mở (thời gian thay đổi, tức là bắt đầu/kích hoạt lại từ đầu)
+      // 2. Trạng thái chuyển sang 'locked' (do Host/Manager bấm Lock hoặc Reset từ trạng thái mở)
+      // 3. Trạng thái chuyển sang 'pending_open' (chỉ xảy ra khi Reset từ trạng thái mở vĩnh viễn)
+      if (isBuzzOpenTimeChanged || isBuzzStatusChangedToLocked || isBuzzResetToPending) {
           buzzOrder = []; 
           renderBuzz(); 
-          fetchBuzz(); 
+          // Chỉ fetch lại nếu không phải là lệnh reset đã xóa data ở máy khác (vì data đã bị xóa trên DB rồi)
+          if(room.buzz_status !== 'pending_open') fetchBuzz(); 
       } 
-      // Xử lý khi Host khóa chuông
-      else if (room.buzz_status === 'locked' && oldBuzzStartTime !== 0) {
-          buzzOrder = []; 
-          renderBuzz();
-          fetchBuzz();
-      }
-      // Xử lý khi Host Reset (về 'pending_open')
-      else if (room.buzz_status === 'pending_open' && oldAnswerStatus !== 'pending_open') {
-          // Khi reset trong trạng thái mở vĩnh viễn, data đã bị xoá
-          buzzOrder = []; 
-          renderBuzz();
-      }
-      
+
       updateUI();
     }
 
