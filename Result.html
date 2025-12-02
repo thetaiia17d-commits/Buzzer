@@ -15,7 +15,8 @@
         #headerContainer {
             margin-bottom: 20px;
             padding: 10px;
-            background: #f0f0f0;
+            background: yellow;
+            color:green;
             text-align: center;
             border-radius: 5px;
         }
@@ -33,36 +34,69 @@
             font-size: 1.2em;
         }
 
-        #sortOptions {
+        #sortOptions,
+        #displayOptions {
             font-family: Arial, sans-serif;
             margin-bottom: 10px;
             font-weight: bold;
             text-align: center;
-            color: black;
+            color: red;
             display: flex;
             justify-content: center;
             gap: 30px;
-        }
-
-        #sortOptions label {
-            cursor: pointer;
         }
 
         #displayOptions {
-            font-family: Arial, sans-serif;
+            margin-top: 5px;
             margin-bottom: 15px;
-            font-weight: bold;
-            text-align: center;
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            /* Thiết lập màu tím đậm cho chữ */
-            color: purple; 
+            color: purple;
         }
 
+        /* --- CSS TÙY CHỈNH CHO RADIO BUTTON --- */
+        #sortOptions label,
         #displayOptions label {
             cursor: pointer;
+            display: flex; /* Dùng flexbox để căn chỉnh ô tròn và chữ */
+            align-items: center;
+            gap: 5px;
         }
+
+        /* Ẩn radio button gốc */
+        input[type="radio"] {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            margin: 0;
+            position: relative;
+            /* Tùy chỉnh kích thước và hình dạng ô tròn */
+            width: 16px; 
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid #ff00cc; /* Border mặc định khi KHÔNG được chọn */
+            outline: none;
+            transition: border 0.2s ease-in-out;
+        }
+
+        /* Tạo hình tròn bên trong khi được chọn */
+        input[type="radio"]:checked {
+            border: 2px solid orange; /* Border khi ĐƯỢC chọn là màu orange */
+        }
+
+        /* Hình tròn bên trong (màu blue) */
+        input[type="radio"]:checked::before {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            background-color: blue; /* Màu hình tròn trong là blue */
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: background-color 0.2s ease-in-out;
+        }
+        /* --- KẾT THÚC CSS TÙY CHỈNH --- */
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -128,7 +162,6 @@
                 return;
             }
             if (room) {
-                // Nếu phòng bị Reset (answer_open_time = null), roomStartTime sẽ về 0
                 roomStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
             }
         }
@@ -145,7 +178,6 @@
                 return;
             }
             
-            // Khi Host Reset -> data sẽ rỗng
             answers = data || [];
             render();
         }
@@ -153,7 +185,6 @@
         function render() {
             resultsContainer.innerHTML = '';
             
-            // Logic kiểm tra mảng rỗng để hiển thị thông báo
             if (answers.length === 0) {
                 resultsContainer.innerHTML = '<p style="text-align:center">Chưa có dữ liệu</p>';
                 return;
@@ -169,7 +200,6 @@
 
             let displayData = Array.from(latestAnswersMap.values());
             const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
-            // Lấy tùy chọn hiển thị thời gian
             const displayTimeOption = document.querySelector('input[name="displayTime"]:checked')?.value || 'show';
 
             if (sortOption === "time") {
@@ -188,7 +218,6 @@
             displayData.forEach(item => {
                 const submitTime = new Date(item.created_at).getTime();
                 let diff = 0;
-                // Chỉ tính thời gian nếu roomStartTime hợp lệ
                 if (roomStartTime && submitTime > roomStartTime) {
                     diff = (submitTime - roomStartTime) / 1000;
                 }
@@ -198,7 +227,6 @@
                 const div = document.createElement('div');
                 div.className = 'result-row';
 
-                // Điều chỉnh nội dung hiển thị dựa trên tùy chọn displayTime
                 let content = `${item.name} | ${answerText}`;
                 if (displayTimeOption === 'show') {
                     content += ` | ${timeStr}`;
@@ -221,23 +249,18 @@
             await fetchParticipants();
             await fetchAndRender();
 
-            // Realtime: Lắng nghe thay đổi bảng Answers (Insert/Delete)
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
                     () => { 
-                        // Sự kiện DELETE xảy ra khi Host Reset -> buộc fetch lại
                         fetchAndRender(); 
                     })
                 .subscribe();
 
-            // Realtime: Lắng nghe thay đổi thông tin Phòng (để cập nhật mốc thời gian)
             supabase.channel('room_channel')
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
                     (payload) => {
-                        // Cập nhật roomStartTime
                         if ('answer_open_time' in payload.new) {
                             roomStartTime = payload.new.answer_open_time ? new Date(payload.new.answer_open_time).getTime() : 0;
-                            //ĐÃ SỬA: Thay render() bằng fetchAndRender() để đảm bảo đồng bộ dữ liệu sau khi Host Reset
                             fetchAndRender(); 
                         }
                     })
