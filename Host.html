@@ -860,6 +860,7 @@
       
       // --- Xử lý trạng thái Đáp án ---
       const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+      const isAnswerOpenTimeChanged = newAnswerStartTime !== oldAnswerStartTime; // <--- THÊM BIẾN NÀY
 
       if (room.answer_status === 'open') {
         answerStartTime = newAnswerStartTime;
@@ -886,11 +887,10 @@
 
         // Xử lý xóa data Answers: Kích hoạt khi:
         // 1. Trạng thái chuyển từ 'open' sang 'locked' (Lock hoặc Reset từ trạng thái mở)
-        // 2. HOẶC trạng thái là 'locked' VÀ thời gian mở CŨ (trước khi update) KHÁC 0. 
-        //    (Điều này đảm bảo xóa bảng sau khi Reset từ trạng thái Khóa)
+        // 2. HOẶC thời gian mở thay đổi (do lệnh reset 2 bước) <--- ĐIỀU KIỆN MỚI
         if (
             (room.answer_status === 'locked' && oldAnswerStatus !== 'locked') || 
-            (room.answer_status === 'locked' && oldAnswerStartTime !== 0) 
+            isAnswerOpenTimeChanged 
         ) {
             answers = []; 
             renderAnswers();
@@ -910,7 +910,7 @@
           buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
           
           const currentServerTime = Date.now() + serverTimeOffset;
-          if (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime) { // Đã sửa lỗi: dùng buzzEndTime
+          if (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime) {
               lockedBuzz = true;
           } else {
               lockedBuzz = false;
@@ -924,9 +924,8 @@
       }
 
       // Xử lý xóa data Buzz: Kích hoạt khi:
-      // 1. Chuông được mở (thời gian thay đổi: isBuzzOpenTimeChanged)
+      // 1. Chuông được mở (thời gian thay đổi: isBuzzOpenTimeChanged) <--- LUÔN ĐÚNG KHI RESET 2 BƯỚC
       // 2. HOẶC trạng thái là 'locked' VÀ thời gian mở CŨ khác 0. 
-      //    (Đảm bảo xóa sau khi Reset từ trạng thái Khóa)
       // 3. HOẶC trạng thái chuyển sang 'pending_open' (Reset từ Mở Vĩnh Viễn)
       if (
           isBuzzOpenTimeChanged || 
@@ -1079,37 +1078,33 @@
       if (error) showPopup(errorMsg + ": " + error.message, "error");
     }
 
+    // Host.html (Khoảng dòng 630)
     async function resetRoomData(isAnswer) {
       if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
 
       let table = isAnswer ? 'answers' : 'buzzes';
-      let roomUpdate = {};
       let successMsg = "";
       let errorMsg = "";
-
+      
+      // Xác định trạng thái cuối cùng
+      let finalStatus = isAnswer ? 'locked' : (
+          (roomInfo && roomInfo.buzz_status === 'open' && roomInfo.buzz_duration === 0) 
+              ? 'pending_open' : 'locked'
+      );
+      
       if (isAnswer) {
-        // Reset Answer luôn khóa và xóa data
-        roomUpdate = { answer_open_time: null, answer_duration: 0, answer_status: 'locked' };
-        successMsg = "Đã xóa hết đáp án và khóa!";
-        errorMsg = "Lỗi reset đáp án!";
+          successMsg = "Đã xóa hết đáp án và khóa!";
+          errorMsg = "Lỗi reset đáp án!";
       } else {
-        // Logic Reset Buzz: Nếu đang Mở vĩnh viễn (status: 'open', duration: 0), thì reset data và chuyển về 'pending_open'
-        if (roomInfo && roomInfo.buzz_status === 'open' && roomInfo.buzz_duration === 0) {
-          // Mở vĩnh viễn, reset chuông và chuyển về trạng thái chờ mở để thí sinh kích hoạt lại
-          roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'pending_open' }; 
-          successMsg = "Đã Reset chuông!";
-        } else {
-          // Các trường hợp khác, khóa và xóa data
-          roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
-          successMsg = "Đã xóa hết chuông (Reset) và khóa!";
-        }
-        errorMsg = "Lỗi reset chuông!";
+          successMsg = finalStatus === 'pending_open' ? "Đã Reset chuông!" : "Đã xóa hết chuông (Reset) và khóa!";
+          errorMsg = "Lỗi reset chuông!";
       }
       
+      // Xóa data trên DB
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
       if (dataError) return showPopup(errorMsg, "error");
       
-      // BỔ SUNG: Xóa data cục bộ và render lại ngay trên máy đang thao tác (Tức thì)
+      // Xóa data cục bộ và render lại ngay trên máy đang thao tác (Tức thì)
       if (isAnswer) {
         answers = []; 
         renderAnswers();
@@ -1118,8 +1113,22 @@
         renderBuzz();
       }
       
-      const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
-
+      // --- BƯỚC 1: Cập nhật tạm thời để TẠO SỰ KIỆN Realtime. Force *open_time to a non-null value. ---
+      const temporaryTime = getServerTimeNowISO();
+      const tempUpdate = isAnswer 
+          ? { answer_open_time: temporaryTime } 
+          : { buzz_open_time: temporaryTime };
+      
+      // Không cần chờ (await) lệnh này vì lệnh sau sẽ sửa lại ngay
+      supabase.from('rooms').update(tempUpdate).eq('room_code', currentRoom);
+      
+      // --- BƯỚC 2: Cập nhật về trạng thái cuối cùng (null time, locked/pending_open status). ---
+      const finalUpdate = isAnswer 
+          ? { answer_open_time: null, answer_duration: 0, answer_status: finalStatus }
+          : { buzz_open_time: null, buzz_duration: 0, buzz_status: finalStatus };
+          
+      const { error: roomError } = await supabase.from('rooms').update(finalUpdate).eq('room_code', currentRoom);
+      
       if (roomError) {
         showPopup(errorMsg, "error");
       } else {
