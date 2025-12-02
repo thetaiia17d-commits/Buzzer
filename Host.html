@@ -518,7 +518,7 @@
       if (!sA || !sB || !roomInfo) return; // ** Đã thêm kiểm tra roomInfo **
 
       // Cập nhật trạng thái
-      if (roomInfo.answer_status === 'locked') {
+      if (roomInfo.answer_status === 'locked' || lockedAnswer === true) { // ** Cập nhật trạng thái UI từ biến cục bộ
           sA.className = "status-box locked";
           sA.innerText = "Đáp án: 🔒 Đang khóa";
           lockedAnswer = true;
@@ -532,7 +532,7 @@
           lockedAnswer = false;
       }
       
-      if (roomInfo.buzz_status === 'locked') {
+      if (roomInfo.buzz_status === 'locked' || lockedBuzz === true) { // ** Cập nhật trạng thái UI từ biến cục bộ
           sB.className = "status-box locked";
           sB.innerText = "Chuông: 🚫 Đang khóa";
           lockedBuzz = true;
@@ -560,14 +560,14 @@
       if (roomInfo && roomInfo.answer_status === 'pending_open') {
           aDisp.innerText = "Đang chờ thí sinh đồng bộ...";
       }
-      // Logic đếm ngược
+      // Logic đếm ngược Answer
       else if (!lockedAnswer && answerDurationLimit > 0 && answerEndTime > 0) {
         let remain = answerEndTime - currentServerTime;
         const maxMs = answerDurationLimit * 1000;
         if (remain > maxMs) remain = maxMs; 
 
         if (remain <= 0) {
-          lockedAnswer = true;
+          lockedAnswer = true; // ** Tự động khóa cục bộ khi hết giờ
           updateUI();
           aDisp.innerText = "Hết giờ!";
         } else {
@@ -583,14 +583,14 @@
       if (roomInfo && roomInfo.buzz_status === 'pending_open') {
           bDisp.innerText = "Đang chờ thí sinh đồng bộ...";
       }
-      // Logic đếm ngược
+      // Logic đếm ngược Buzz
       else if (!lockedBuzz && buzzDurationLimit > 0 && buzzEndTime > 0) {
         let remain = buzzEndTime - currentServerTime;
         const maxMs = buzzDurationLimit * 1000;
         if (remain > maxMs) remain = maxMs; 
 
         if (remain <= 0) {
-          lockedBuzz = true;
+          lockedBuzz = true; // ** Tự động khóa cục bộ khi hết giờ
           updateUI();
           bDisp.innerText = "Hết giờ!";
         } else {
@@ -838,7 +838,16 @@
         answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
-        if (oldAnswerStatus !== 'open') {
+        
+        // Kiểm tra xem thời gian có còn không, nếu hết thì coi như đã khóa cục bộ
+        const currentServerTime = Date.now() + serverTimeOffset;
+        if (answerDurationLimit > 0 && answerEndTime > 0 && answerEndTime <= currentServerTime) {
+            lockedAnswer = true;
+        } else {
+            lockedAnswer = false;
+        }
+
+        if (oldAnswerStatus !== 'open' && !lockedAnswer) {
              // Reset data if it was triggered to open (by contestant)
             answers = []; 
             renderAnswers();
@@ -848,6 +857,8 @@
         answerStartTime = 0;
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = 0;
+        lockedAnswer = true; // Luôn khóa nếu không phải trạng thái 'open'
+
         if (room.answer_status === 'locked' && oldAnswerStatus !== 'locked') {
             answers = []; 
             renderAnswers();
@@ -865,17 +876,29 @@
           buzzStartTime = newBuzzStartTime;
           buzzDurationLimit = buzzDuration;
           buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+          
+          // Kiểm tra xem thời gian có còn không, nếu hết thì coi như đã khóa cục bộ
+          const currentServerTime = Date.now() + serverTimeOffset;
+          if (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime) {
+              lockedBuzz = true;
+          } else {
+              lockedBuzz = false;
+          }
+
       } else { // 'locked' or 'pending_open'
           buzzStartTime = 0;
           buzzDurationLimit = buzzDuration; 
           buzzEndTime = 0;
+          lockedBuzz = true; // Luôn khóa nếu không phải trạng thái 'open'
       }
 
       if (isBuzzOpenTimeChanged) {
+          // Chỉ reset data khi thời gian bắt đầu thay đổi (tức là lệnh mở đã được Contestant thực thi)
           buzzOrder = []; 
           renderBuzz(); 
           fetchBuzz(); 
       } else if (room.buzz_status === 'locked' && oldBuzzStartTime !== 0) {
+          // Reset data khi Host khóa chuông
           buzzOrder = []; 
           renderBuzz();
           fetchBuzz();
@@ -983,11 +1006,11 @@
         const optimisticRoom = {
             answer_status: isAnswer ? 'pending_open' : (roomInfo ? roomInfo.answer_status : 'locked'),
             answer_open_time: null, 
-            answer_duration: isAnswer ? duration : answerDurationLimit,
+            answer_duration: isAnswer ? duration : (roomInfo ? roomInfo.answer_duration : 0),
             
             buzz_status: !isAnswer ? 'pending_open' : (roomInfo ? roomInfo.buzz_status : 'locked'),
             buzz_open_time: null, 
-            buzz_duration: !isAnswer ? duration : buzzDurationLimit
+            buzz_duration: !isAnswer ? duration : (roomInfo ? roomInfo.buzz_duration : 0)
         };
         handleRoomUpdate(optimisticRoom);
         showPopup(isAnswer ? "Đáp án: Đã gửi lệnh, đang chờ thí sinh đồng bộ..." : "Chuông: Đã gửi lệnh, đang chờ thí sinh đồng bộ...");
@@ -1009,11 +1032,11 @@
         const optimisticRoom = {
             answer_status: isAnswer ? 'locked' : (roomInfo ? roomInfo.answer_status : 'locked'),
             answer_open_time: null,
-            answer_duration: isAnswer ? 0 : answerDurationLimit,
+            answer_duration: isAnswer ? 0 : (roomInfo ? roomInfo.answer_duration : 0),
             
             buzz_status: !isAnswer ? 'locked' : (roomInfo ? roomInfo.buzz_status : 'locked'),
             buzz_open_time: null,
-            buzz_duration: !isAnswer ? 0 : buzzDurationLimit
+            buzz_duration: !isAnswer ? 0 : (roomInfo ? roomInfo.buzz_duration : 0)
         };
         handleRoomUpdate(optimisticRoom);
         showPopup(successMsg);
@@ -1029,20 +1052,34 @@
 
       let table = isAnswer ? 'answers' : 'buzzes';
       let roomUpdate = {};
+      let successMsg = "";
+      let errorMsg = "";
 
-      roomUpdate = isAnswer 
-        ? { answer_open_time: null, answer_duration: 0, answer_status: 'locked' }
-        : { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
+      if (isAnswer) {
+        // Reset Answer luôn khóa và xóa data
+        roomUpdate = { answer_open_time: null, answer_duration: 0, answer_status: 'locked' };
+        successMsg = "Đã xóa hết đáp án và khóa!";
+        errorMsg = "Lỗi reset đáp án!";
+      } else {
+        // Logic Reset Buzz: Nếu đang Mở vĩnh viễn (status: 'open', duration: 0), thì reset data và giữ trạng thái 'open'
+        if (roomInfo && roomInfo.buzz_status === 'open' && roomInfo.buzz_duration === 0) {
+          // Mở vĩnh viễn, reset chuông và giữ trạng thái mở
+          roomUpdate = { buzz_open_time: getServerTimeNowISO(), buzz_duration: 0, buzz_status: 'pending_open' }; 
+          successMsg = "Đã xóa hết chuông (Reset) và giữ nguyên trạng thái mở vĩnh viễn!";
+        } else {
+          // Các trường hợp khác, khóa và xóa data
+          roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
+          successMsg = "Đã xóa hết chuông (Reset) và khóa!";
+        }
+        errorMsg = "Lỗi reset chuông!";
+      }
       
-      let successMsg = isAnswer ? "Đã xóa hết đáp án và khóa!" : "Đã xóa hết chuông (Reset)!";
-      let errorMsg = isAnswer ? "Lỗi reset đáp án!" : "Lỗi reset chuông!";
+      const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
+      if (dataError) return showPopup(errorMsg, "error");
 
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
-      if (roomError) return showPopup(errorMsg, "error");
 
-      const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
-
-      if (dataError) {
+      if (roomError) {
         showPopup(errorMsg, "error");
       } else {
         fetchRoomStatus(); // Cập nhật lại trạng thái phòng
@@ -1213,7 +1250,7 @@
           Array.from(uniqueBuzzMap.values())
             .forEach(b => wsData2.push([b.name, formatTimeDisplay(b.created_at, buzzStartTime)]));
 
-          const ws2 = XLSX.utils.aoa_to_sheet(ws2);
+          const ws2 = XLSX.utils.aoa_to_sheet(wsData2);
           XLSX.utils.book_append_sheet(wb, ws2, "Chuong");
 
           XLSX.writeFile(wb, `KetQua_${currentRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`);

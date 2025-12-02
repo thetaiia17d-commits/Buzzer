@@ -238,8 +238,14 @@
       if (elementId === 'answerCountdown' && answerInterval) clearInterval(answerInterval);
       if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
 
-      if (!startTimeISO || duration <= 0) {
+      if (!startTimeISO) {
         el.innerText = "--.--s";
+        return;
+      }
+      
+      // Nếu duration là 0, tức là Mở Vĩnh Viễn, không cần hẹn giờ
+      if (duration <= 0) {
+        el.innerText = "Vĩnh viễn";
         return;
       }
 
