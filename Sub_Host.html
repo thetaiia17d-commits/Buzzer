@@ -766,6 +766,14 @@
           answerInput.placeholder = "Đáp án";
           answerInput.required = true;
           row.appendChild(answerInput);
+          const answerTimeInput = document.createElement("input");
+          answerTimeInput.type = "number";
+          answerTimeInput.className = "add-popup-input add-answer-time"; // class mới
+          answerTimeInput.placeholder = "Tg trả lời (giây)"; // placeholder mới
+          answerTimeInput.min = "0";
+          answerTimeInput.step = "0.01";
+          answerTimeInput.required = true;
+          row.appendChild(answerTimeInput);
         } else { 
           const buzzTimeInput = document.createElement("input");
           buzzTimeInput.type = "number";
@@ -797,6 +805,7 @@
         insertFields = rows.map(row => {
           const name = row.querySelector('.add-name')?.value.trim();
           const answer = row.querySelector('.add-answer')?.value.trim();
+          const timeSeconds = parseFloat(row.querySelector('.add-answer-time')?.value);
           if (!name || !answer) return null;
           const created_at_ts = baseTime > 0 ? baseTime + 1 : Date.now() + serverTimeOffset; 
           return {
