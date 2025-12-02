@@ -15,9 +15,16 @@
         #headerContainer {
             margin-bottom: 20px;
             padding: 10px;
-            background: #f0f0f0;
+            background: yellow;
             text-align: center;
             border-radius: 5px;
+        }
+
+        #headerContainer h2 {
+            margin: 0;
+            /* ĐIỀU CHỈNH: Tiêu đề Kết quả */
+            font-weight: bold; 
+            color: green;
         }
 
         #resultsContainer {
@@ -33,7 +40,7 @@
             font-size: 1.2em;
         }
 
-        #sortOptions {
+        #sortOptions, #displayOptions {
             font-family: Arial, sans-serif;
             margin-bottom: 10px;
             font-weight: bold;
@@ -46,6 +53,16 @@
 
         #sortOptions label {
             cursor: pointer;
+            /* ĐIỀU CHỈNH: Màu chữ cho tùy chọn sắp xếp */
+            color: red;
+            font-weight: bold;
+        }
+
+        #displayOptions label {
+            cursor: pointer;
+            /* ĐIỀU CHỈNH: Màu chữ cho tùy chọn hiển thị */
+            color: purple;
+            font-weight: bold;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -53,7 +70,7 @@
 
 <body>
     <div id="headerContainer">
-        <h2 style="margin: 0;">Kết quả</h2>
+        <h2>Kết quả</h2>
         <span id="roomStatus" style="color: blue;">Đang kết nối...</span>
     </div>
 
@@ -65,11 +82,21 @@
             <input type="radio" name="sortOption" value="time" checked onchange="render()"> Theo thời gian trả lời
         </label>
     </div>
+
+    <div id="displayOptions">
+        <label>
+            <input type="radio" name="displayOption" value="show" checked onchange="render()"> Hiện thời gian
+        </label>
+        <label>
+            <input type="radio" name="displayOption" value="hide" onchange="render()"> Ẩn thời gian
+        </label>
+    </div>
+    
     <div id="resultsContainer">Đang tải...</div>
 
     <script>
         var SUPABASE_URL = "https://rsvggeknetiacezwvgxy.supabase.co";
-        var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmdnZWtuZXRpYWNlend2Z3h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0OTI0NzksImV4cCI6MjA4MDA2ODQ3OX0.mkrHJaOA2axmVx8o5M0AOoyiVdmIFyNdQMiQahSvdEU";
+        var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmdnZWtuZXRpYWNlend2Z3h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0OTI0NzksImV4cHAiOjIwODAwNjg0Nzl9.mkrHJaOA2axmVx8o5M0AOoyiVdmIFdNdQMiQahSvdEU";
         var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const params = new URLSearchParams(window.location.search);
@@ -143,6 +170,8 @@
 
             let displayData = Array.from(latestAnswersMap.values());
             const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
+            // Lấy tùy chọn hiển thị thời gian mới
+            const displayOption = document.querySelector('input[name="displayOption"]:checked')?.value || 'show';
 
             if (sortOption === "time") {
                 displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -164,12 +193,19 @@
                 if (roomStartTime && submitTime > roomStartTime) {
                     diff = (submitTime - roomStartTime) / 1000;
                 }
-                const timeStr = (roomStartTime && diff > 0) ? diff.toFixed(3) + 's' : 'N/A';
+                
+                let timeStr = '';
+                // Áp dụng logic ẩn/hiện thời gian
+                if (displayOption === 'show') {
+                    timeStr = (roomStartTime && diff > 0) ? ` | ${diff.toFixed(3)}s` : ' | N/A';
+                }
+                
                 const answerText = item.answer_text || item.answer || "[Không có đáp án]";
 
                 const div = document.createElement('div');
                 div.className = 'result-row';
-                div.textContent = `${item.name} | ${answerText} | ${timeStr}`;
+                // Điều chỉnh hiển thị để bao gồm/loại trừ timeStr
+                div.textContent = `${item.name} | ${answerText}${timeStr}`;
                 resultsContainer.appendChild(div);
             });
         }
