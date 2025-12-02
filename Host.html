@@ -848,10 +848,6 @@
     }
 
     function handleRoomUpdate(room) {
-      // SỬA LỖI BUG: Lấy trạng thái cũ TRƯỚC KHI cập nhật roomInfo
-      const oldAnswerStatus = roomInfo ? roomInfo.answer_status : 'locked'; 
-      const oldBuzzStatus = roomInfo ? roomInfo.buzz_status : 'locked'; 
-      
       // Lưu trữ thời gian cũ TRƯỚC KHI gán lại roomInfo
       const oldAnswerStartTime = answerStartTime;
       const oldBuzzStartTime = buzzStartTime;
@@ -860,7 +856,6 @@
       
       // --- Xử lý trạng thái Đáp án ---
       const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-      const isAnswerOpenTimeChanged = newAnswerStartTime !== oldAnswerStartTime; // <--- THÊM BIẾN NÀY
 
       if (room.answer_status === 'open') {
         answerStartTime = newAnswerStartTime;
@@ -873,37 +868,26 @@
         } else {
             lockedAnswer = false;
         }
+        
+        // Nếu mở lại thì fetch lại để đảm bảo sync
+        fetchAnswers();
 
-        if (oldAnswerStatus !== 'open' && !lockedAnswer) {
-            answers = []; 
-            renderAnswers();
-            fetchAnswers();
-        }
       } else { // 'locked' or 'pending_open'
         answerStartTime = 0; 
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = 0;
         lockedAnswer = true; 
 
-        // Xử lý xóa data Answers: Kích hoạt khi:
-        // 1. Trạng thái chuyển từ 'open' sang 'locked' (Lock hoặc Reset từ trạng thái mở)
-        // 2. HOẶC thời gian mở thay đổi (do lệnh reset 2 bước) <--- ĐIỀU KIỆN MỚI
-        if (
-            (room.answer_status === 'locked' && oldAnswerStatus !== 'locked') || 
-            isAnswerOpenTimeChanged 
-        ) {
-            answers = []; 
-            renderAnswers();
-            fetchAnswers();
-        }
+        // --- SỬA LỖI: Luôn fetch lại dữ liệu khi ở trạng thái khóa ---
+        // Điều này đảm bảo nếu Host bấm Reset (xóa DB), các máy con sẽ fetch được list rỗng ([]) và tự xóa bảng.
+        // Nếu Host bấm Lock (giữ DB), các máy con sẽ fetch được list cũ và hiện lại (sync).
+        fetchAnswers();
       }
       
       // --- Xử lý trạng thái Chuông ---
       const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
       const buzzDuration = room.buzz_duration || 0;
       
-      const isBuzzOpenTimeChanged = newBuzzStartTime !== oldBuzzStartTime;
-
       if (room.buzz_status === 'open') {
           buzzStartTime = newBuzzStartTime;
           buzzDurationLimit = buzzDuration;
@@ -915,28 +899,18 @@
           } else {
               lockedBuzz = false;
           }
+          
+          fetchBuzz();
 
       } else { // 'locked' or 'pending_open'
           buzzStartTime = 0;
           buzzDurationLimit = buzzDuration; 
           buzzEndTime = 0;
           lockedBuzz = true; 
+          
+          // --- SỬA LỖI: Luôn fetch lại dữ liệu chuông khi khóa ---
+          fetchBuzz();
       }
-
-      // Xử lý xóa data Buzz: Kích hoạt khi:
-      // 1. Chuông được mở (thời gian thay đổi: isBuzzOpenTimeChanged) <--- LUÔN ĐÚNG KHI RESET 2 BƯỚC
-      // 2. HOẶC trạng thái là 'locked' VÀ thời gian mở CŨ khác 0. 
-      // 3. HOẶC trạng thái chuyển sang 'pending_open' (Reset từ Mở Vĩnh Viễn)
-      if (
-          isBuzzOpenTimeChanged || 
-          (room.buzz_status === 'locked' && oldBuzzStartTime !== 0) || 
-          (room.buzz_status === 'pending_open' && oldBuzzStatus !== 'pending_open') 
-      ) {
-          buzzOrder = []; 
-          renderBuzz(); 
-          // Chỉ fetch lại nếu không phải là lệnh reset đã xóa data ở máy khác (vì data đã bị xóa trên DB rồi)
-          if(room.buzz_status !== 'pending_open') fetchBuzz(); 
-      } 
 
       updateUI();
     }
@@ -1078,7 +1052,6 @@
       if (error) showPopup(errorMsg + ": " + error.message, "error");
     }
 
-    // Host.html (Khoảng dòng 630)
     async function resetRoomData(isAnswer) {
       if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
 
@@ -1100,11 +1073,11 @@
           errorMsg = "Lỗi reset chuông!";
       }
       
-      // Xóa data trên DB
+      // 1. Xóa data trên DB
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
       if (dataError) return showPopup(errorMsg, "error");
       
-      // Xóa data cục bộ và render lại ngay trên máy đang thao tác (Tức thì)
+      // 2. Xóa data cục bộ cho máy Host (để phản hồi nhanh)
       if (isAnswer) {
         answers = []; 
         renderAnswers();
@@ -1113,16 +1086,16 @@
         renderBuzz();
       }
       
-      // --- BƯỚC 1: Cập nhật tạm thời để TẠO SỰ KIỆN Realtime. Force *open_time to a non-null value. ---
+      // 3. Cập nhật "nháy" trạng thái để báo hiệu cho các máy khác (QUAN TRỌNG)
+      // Thêm 'await' để đảm bảo database ghi nhận sự thay đổi này trước khi ghi đè lại
       const temporaryTime = getServerTimeNowISO();
       const tempUpdate = isAnswer 
           ? { answer_open_time: temporaryTime } 
           : { buzz_open_time: temporaryTime };
       
-      // Không cần chờ (await) lệnh này vì lệnh sau sẽ sửa lại ngay
-      supabase.from('rooms').update(tempUpdate).eq('room_code', currentRoom);
+      await supabase.from('rooms').update(tempUpdate).eq('room_code', currentRoom);
       
-      // --- BƯỚC 2: Cập nhật về trạng thái cuối cùng (null time, locked/pending_open status). ---
+      // 4. Cập nhật về trạng thái khóa cuối cùng
       const finalUpdate = isAnswer 
           ? { answer_open_time: null, answer_duration: 0, answer_status: finalStatus }
           : { buzz_open_time: null, buzz_duration: 0, buzz_status: finalStatus };
@@ -1132,7 +1105,7 @@
       if (roomError) {
         showPopup(errorMsg, "error");
       } else {
-        fetchRoomStatus(); // Kích hoạt sự kiện Realtime (handleRoomUpdate) trên các máy khác
+        // Không cần gọi fetchRoomStatus() thủ công vì Realtime sẽ tự trả về sự kiện
         showPopup(successMsg);
       }
     }
