@@ -15,7 +15,6 @@
         #headerContainer {
             margin-bottom: 20px;
             padding: 10px;
-            /* Đã chỉnh lại màu nền theo file Host gần nhất */
             background: yellow; 
             text-align: center;
             border-radius: 5px;
@@ -66,7 +65,7 @@
             font-weight: bold;
         }
         
-        /* BẮT ĐẦU PHẦN CHỈNH SỬA CHO RADIO BUTTON */
+        /* BẮT ĐẦU PHẦN CHỈNH SỬA CHO RADIO BUTTON (Màu vàng) */
         input[type="radio"] {
             /* Ẩn radio button gốc */
             -webkit-appearance: none;
@@ -87,6 +86,7 @@
         }
 
         input[type="radio"]:checked {
+            /* Thay đổi màu viền khi được chọn (Màu vàng) */
             border-color: orange; 
         }
 
@@ -95,7 +95,7 @@
             content: '';
             width: 10px;
             height: 10px;
-            background-color: blue;
+            background-color: blue; /* MÀU VÀNG (YELLOW) */
             position: absolute;
             top: 50%;
             left: 50%;
@@ -266,8 +266,10 @@
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
                     () => { 
-                        // Sự kiện này đảm bảo fetch lại khi có đáp án mới hoặc khi Host reset (DELETE)
-                        fetchAndRender(); 
+                        // THAY ĐỔI QUAN TRỌNG: Thêm độ trễ để tránh Race Condition (Lỗi đồng bộ Realtime)
+                        setTimeout(() => {
+                            fetchAndRender(); 
+                        }, 200);
                     })
                 .subscribe();
 
