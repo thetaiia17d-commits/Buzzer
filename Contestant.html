@@ -213,7 +213,8 @@
     }
 
     function getServerTimeNow() {
-      return Date.now() + serverTimeOffset;
+      // Thời gian ước tính của Server (Đã đồng bộ)
+      return Date.now() + serverTimeOffset; 
     }
 
     async function syncServerTime() {
@@ -231,7 +232,7 @@
       }
     }
 
-    // --- XỬ LÝ ĐỒNG HỒ ĐẾM NGƯỢC (ĐÃ SỬA: LOCAL COMPENSATION VÀ CẬP NHẬT TỨC THÌ) ---
+    // --- XỬ LÝ ĐỒNG HỒ ĐẾM NGƯỢC ---
     function startTimer(elementId, startTimeISO, duration, callbackEnd) {
       const el = document.getElementById(elementId);
       if (elementId === 'answerCountdown' && answerInterval) clearInterval(answerInterval);
@@ -242,31 +243,14 @@
         return;
       }
 
-      // 1. Tính toán thời gian bắt đầu theo Server (Chuẩn)
-      const serverStartTime = new Date(startTimeISO).getTime();
+      const sharedStartTime = new Date(startTimeISO).getTime();
+      const localEndTime = sharedStartTime + (duration * 1000);
+      
+      // Hiển thị ngay lập tức (loại bỏ độ trễ 30ms ban đầu)
       const now = getServerTimeNow();
-      const elapsed = now - serverStartTime; // Độ trễ mạng + sai lệch đồng hồ
-
-      let localEndTime;
-      let initialDisplayTime; // Thời gian hiển thị ban đầu
-
-      if (elapsed >= 0 && elapsed < 2000) {
-        // Case 1: Sự kiện vừa mới xảy ra (trong vòng 2 giây). 
-        // Bù trừ độ trễ mạng để hiển thị đủ thời gian.
-        localEndTime = now + (duration * 1000); 
-        initialDisplayTime = duration * 1000; // HIỂN THỊ LUÔN SỐ GIÂY ĐẦY ĐỦ
-      } else {
-        // Case 2: Vào phòng sau khi sự kiện đã xảy ra, hoặc độ trễ quá lớn.
-        // Cần đồng bộ theo giờ Server để hiển thị thời gian còn lại chính xác.
-        localEndTime = serverStartTime + (duration * 1000);
-        
-        // Tính thời gian còn lại thực tế
-        const remain = localEndTime - now;
-        initialDisplayTime = remain > 0 ? remain : 0;
-      }
-
-      // ** FIX: HIỂN THỊ NGAY LẬP TỨC TRƯỚC KHI SETINTERVAL CHẠY **
-      el.innerText = (initialDisplayTime / 1000).toFixed(3) + "s";
+      let initialRemain = localEndTime - now;
+      initialRemain = initialRemain > 0 ? initialRemain : 0;
+      el.innerText = (initialRemain / 1000).toFixed(3) + "s";
       
       const interval = setInterval(() => {
         const currentNow = getServerTimeNow();
@@ -285,7 +269,7 @@
       if (elementId === 'buzzCountdown') buzzInterval = interval;
     }
 
-    // --- THAM GIA PHÒNG ---
+    // --- THAM GIA PHÒNG (Giữ nguyên) ---
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
@@ -372,32 +356,79 @@
         });
     }
 
-    function handleRoomUpdate(roomData) {
-      if (roomData.answer_status === 'open') {
+    async function handleRoomUpdate(roomData) {
+      // ANSWER LOGIC
+      if (roomData.answer_status === 'pending_open') {
+        // ** BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU **
+        const start_time_iso = new Date(getServerTimeNow()).toISOString();
+        const duration = roomData.answer_duration;
+        
+        // Cập nhật DB (Bật trạng thái OPEN)
+        const { error } = await supabase.from('rooms').update({
+          answer_status: 'open',
+          answer_open_time: start_time_iso
+        }).eq('room_code', myRoom);
+        
+        if (error) {
+            console.error("Lỗi cập nhật start time (Answer):", error);
+        }
+
+        // Bắt đầu đếm ngược ngay lập tức (sử dụng thời gian vừa gửi)
+        updateAnswerUI(false);
+        startTimer('answerCountdown', start_time_iso, duration, () => {
+          updateAnswerUI(true);
+        });
+        
+      } else if (roomData.answer_status === 'open') {
+        // Contestant đã nhận được tín hiệu OPEN (từ chính nó hoặc Contestant khác)
         updateAnswerUI(false);
         startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => {
           updateAnswerUI(true);
         });
-      } else {
+      } else { // 'locked'
         updateAnswerUI(true);
         document.getElementById('answerCountdown').innerText = "0.000s";
         if (answerInterval) clearInterval(answerInterval);
       }
 
-      if (roomData.buzz_status === 'open') {
+      // BUZZ LOGIC
+      if (roomData.buzz_status === 'pending_open') {
+        // ** BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU **
+        const start_time_iso = new Date(getServerTimeNow()).toISOString();
+        const duration = roomData.buzz_duration;
+        
+        // Cập nhật DB (Bật trạng thái OPEN)
+        const { error } = await supabase.from('rooms').update({
+          buzz_status: 'open',
+          buzz_open_time: start_time_iso
+        }).eq('room_code', myRoom);
+
+        if (error) {
+            console.error("Lỗi cập nhật start time (Buzz):", error);
+        }
+
+        // Bắt đầu đếm ngược ngay lập tức
+        if (lockedBuzz === true) hasBuzzed = false;
+        updateBuzzUI(false);
+        startTimer('buzzCountdown', start_time_iso, duration, () => {
+          updateBuzzUI(true);
+        });
+
+      } else if (roomData.buzz_status === 'open') {
+        // Contestant đã nhận được tín hiệu OPEN
         if (lockedBuzz === true) hasBuzzed = false;
         updateBuzzUI(false);
         startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
           updateBuzzUI(true);
         });
-      } else {
+      } else { // 'locked'
         updateBuzzUI(true);
         document.getElementById('buzzCountdown').innerText = "0.000s";
         if (buzzInterval) clearInterval(buzzInterval);
       }
     }
 
-    // --- GỬI ĐÁP ÁN ---
+    // --- GỬI ĐÁP ÁN (Giữ nguyên) ---
     btnSend.onclick = async () => {
       if (lockedAnswer) return showPopup("Đang khóa!", "error");
       const text = answerTextArea.value.trim();
@@ -425,7 +456,7 @@
       }
     };
 
-    // --- BẤM CHUÔNG ---
+    // --- BẤM CHUÔNG (Giữ nguyên) ---
     btnBuzz.onclick = async () => {
       if (lockedBuzz || hasBuzzed) return;
 
