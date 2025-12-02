@@ -848,11 +848,13 @@
     }
 
     function handleRoomUpdate(room) {
-      roomInfo = room; 
-      
-      const oldAnswerStatus = roomInfo.answer_status;
+      // SỬA LỖI BUG: Lấy trạng thái cũ TRƯỚC KHI cập nhật roomInfo
+      // Điều này đảm bảo chúng ta biết trạng thái TRƯỚC khi Realtime update này đến
+      const oldAnswerStatus = roomInfo ? roomInfo.answer_status : 'locked'; 
       const oldBuzzStartTime = buzzStartTime;
-
+      
+      roomInfo = room; // Cập nhật trạng thái mới
+      
       // Xử lý trạng thái Đáp án
       if (room.answer_status === 'open') {
         answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
@@ -877,6 +879,7 @@
         answerEndTime = 0;
         lockedAnswer = true; 
 
+        // Đảm bảo xóa bảng trên các máy khác khi trạng thái chuyển sang 'locked' (sau khi Host/Manager bấm Lock hoặc Reset)
         if (room.answer_status === 'locked' && oldAnswerStatus !== 'locked') {
             answers = []; 
             renderAnswers();
@@ -922,7 +925,7 @@
           fetchBuzz();
       }
       // Xử lý khi Host Reset (về 'pending_open')
-      else if (room.buzz_status === 'pending_open') {
+      else if (room.buzz_status === 'pending_open' && oldAnswerStatus !== 'pending_open') {
           // Khi reset trong trạng thái mở vĩnh viễn, data đã bị xoá
           buzzOrder = []; 
           renderBuzz();
