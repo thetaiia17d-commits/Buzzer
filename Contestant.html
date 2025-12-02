@@ -246,10 +246,16 @@
 
       const startTime = new Date(startTimeISO).getTime();
       const endTime = startTime + (duration * 1000);
+      const maxMs = duration * 1000;
 
       const interval = setInterval(() => {
         const currentServerTime = getServerTimeNow();
-        const remain = endTime - currentServerTime;
+        let remain = endTime - currentServerTime;
+
+        // --- LOGIC: CLAMP MAX VALUE ---
+        // Nếu độ trễ mạng cực thấp hoặc đồng hồ hơi lệch khiến remain > maxMs
+        // Ta ép nó bằng maxMs để hiển thị đẹp (đúng 20.000s)
+        if (remain > maxMs) remain = maxMs;
 
         if (remain <= 0) {
           clearInterval(interval);
@@ -258,13 +264,13 @@
         } else {
           el.innerText = (remain / 1000).toFixed(3) + "s";
         }
-      }, 50);
+      }, 30); // Cập nhật nhanh 30ms
 
       if (elementId === 'answerCountdown') answerInterval = interval;
       if (elementId === 'buzzCountdown') buzzInterval = interval;
     }
 
-    // --- THAM GIA PHÒNG (CHIẾN THUẬT: INSERT TRƯỚC, CHECK SAU) ---
+    // --- THAM GIA PHÒNG ---
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
@@ -274,23 +280,17 @@
 
       const code = parseInt(codeString);
 
-      // 1. Kiểm tra phòng tồn tại
       const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-      // 2. THỬ INSERT LUÔN
       const { error: insertError } = await supabase.from('participants').insert([{
         room_code: code,
         name: name,
         role: 'contestant'
       }]);
 
-      // 3. XỬ LÝ KẾT QUẢ INSERT
       if (insertError) {
-        // Mã lỗi 23505 là lỗi trùng lặp (Unique Violation) trong Postgres
         if (insertError.code === '23505' || insertError.message.includes('duplicate')) {
-          
-          // Tên đã tồn tại -> Kiểm tra xem nó là vai trò gì
           const { data: existingUser } = await supabase
             .from('participants')
             .select('role')
@@ -299,23 +299,17 @@
             .single();
 
           if (existingUser && existingUser.role === 'contestant') {
-            // Trùng tên + Cùng vai trò -> CHO PHÉP VÀO (Rejoin)
             showPopup("Chào mừng bạn quay lại!");
-            // Code sẽ chạy tiếp xuống dưới để setup giao diện...
           } else {
-            // Trùng tên + Khác vai trò (là Host/Manager) -> CHẶN
             return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
           }
         } else {
-          // Các lỗi khác (mất mạng, lỗi server...)
           return showPopup("Lỗi tham gia: " + insertError.message, "error");
         }
       } else {
-        // Insert thành công (Người mới)
         showPopup("Đã vào phòng " + code);
       }
 
-      // --- SETUP GIAO DIỆN (Chạy cho cả người mới và người Rejoin) ---
       myRoom = code;
       myName = name;
 
@@ -346,7 +340,6 @@
 
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'participants', filter: `room_code=eq.${myRoom}` },
           (payload) => {
-            // Nếu dòng bị xóa có tên trùng với tên mình
             if (payload.old.name === myName) {
               location.reload(); 
             }
@@ -395,28 +388,24 @@
       const text = answerTextArea.value.trim();
       if (!text) return showPopup("Nhập đáp án!", "error");
 
-      // 1. Cập nhật UI ngay lập tức: Khóa nút, xóa nội dung và thông báo
-      btnSend.disabled = true; // Khóa tạm thời nút Gửi
-      showPopup("Đang gửi..."); // Thông báo tạm thời
+      btnSend.disabled = true; 
+      showPopup("Đang gửi..."); 
       answerTextArea.value = "";
       answerTextArea.focus();
 
-      // 2. Gửi dữ liệu lên server
       const { error } = await supabase.from('answers').insert([{
         room_code: myRoom,
         name: myName,
         answer_text: text
       }]);
 
-      // 3. Xử lý kết quả
       if (!error) {
-        showPopup("Đã gửi!"); // Thông báo thành công cuối cùng
-        btnSend.disabled = false; // Mở lại nút
+        showPopup("Đã gửi!"); 
+        btnSend.disabled = false; 
       } else {
-        // Nếu có lỗi, hoàn tác và thông báo
         showPopup("Lỗi gửi: " + error.message, "error");
-        answerTextArea.value = text; // Khôi phục đáp án đã nhập
-        btnSend.disabled = false; // Mở lại nút
+        answerTextArea.value = text; 
+        btnSend.disabled = false; 
         console.error("Lỗi gửi đáp án:", error);
       }
     };
@@ -425,19 +414,16 @@
     btnBuzz.onclick = async () => {
       if (lockedBuzz || hasBuzzed) return;
 
-      // 1. Cập nhật UI và trạng thái ngay lập tức (Optimistic UI)
       hasBuzzed = true;
       updateBuzzUI(true);
       showPopup("Đã bấm chuông!");
       
-      // 2. Gửi dữ liệu lên server sau
       const { error } = await supabase.from('buzzes').insert([{
         room_code: myRoom,
         name: myName
       }]);
 
       if (error) {
-        // Xử lý lỗi (ít xảy ra): nếu gửi thất bại, hoàn tác UI
         hasBuzzed = false;
         updateBuzzUI(false); 
         showPopup("Lỗi bấm: " + error.message, "error");
@@ -453,11 +439,8 @@
       }
     });
 
-    // =================== AUTO REMOVE WHEN LEAVING ===================
     async function leaveRoom() {
       if (!myRoom || !myName) return;
-      // Lưu ý: Logic này có thể xóa user nếu họ tắt tab. 
-      // Nếu họ rejoin ngay lập tức thì không sao vì ta đã cho phép Rejoin ở trên.
       try {
         await supabase
           .from("participants")
