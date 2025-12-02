@@ -489,7 +489,7 @@
     }
 
     function formatTimeDisplay(isoDate, startTime) {
-      if (!startTime || !isoDate) return "N/A";
+      if (!startTime || !isoDate) return (diff / 1000).toFixed(3) + "s";
       const ts = new Date(isoDate).getTime();
       let diff = ts - startTime;
       if (diff < 0) diff = 0;
