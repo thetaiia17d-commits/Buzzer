@@ -365,7 +365,7 @@
     async function handleRoomUpdate(roomData) {
       // ANSWER LOGIC
       if (roomData.answer_status === 'pending_open') {
-        // ** BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU **
+        // BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU
         const start_time_iso = new Date(getServerTimeNow()).toISOString();
         const duration = roomData.answer_duration;
         
@@ -379,7 +379,6 @@
             console.error("Lỗi cập nhật start time (Answer):", error);
         }
 
-        // Bắt đầu đếm ngược ngay lập tức (sử dụng thời gian vừa gửi)
         updateAnswerUI(false);
         startTimer('answerCountdown', start_time_iso, duration, () => {
           updateAnswerUI(true);
@@ -399,9 +398,12 @@
 
       // BUZZ LOGIC
       if (roomData.buzz_status === 'pending_open') {
-        // ** BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU **
+        // BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU
         const start_time_iso = new Date(getServerTimeNow()).toISOString();
         const duration = roomData.buzz_duration;
+        
+        // ** Quan trọng: Nếu là Reset trong Mở Vĩnh Viễn, Contestant phải bấm lại chuông
+        hasBuzzed = false;
         
         // Cập nhật DB (Bật trạng thái OPEN)
         const { error } = await supabase.from('rooms').update({
@@ -414,7 +416,6 @@
         }
 
         // Bắt đầu đếm ngược ngay lập tức
-        if (lockedBuzz === true) hasBuzzed = false;
         updateBuzzUI(false);
         startTimer('buzzCountdown', start_time_iso, duration, () => {
           updateBuzzUI(true);
@@ -422,7 +423,6 @@
 
       } else if (roomData.buzz_status === 'open') {
         // Contestant đã nhận được tín hiệu OPEN
-        if (lockedBuzz === true) hasBuzzed = false;
         updateBuzzUI(false);
         startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
           updateBuzzUI(true);
