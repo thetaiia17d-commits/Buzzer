@@ -849,15 +849,20 @@
 
     function handleRoomUpdate(room) {
       // SỬA LỖI BUG: Lấy trạng thái cũ TRƯỚC KHI cập nhật roomInfo
-      // Điều này đảm bảo chúng ta biết trạng thái TRƯỚC khi Realtime update này đến
       const oldAnswerStatus = roomInfo ? roomInfo.answer_status : 'locked'; 
+      const oldBuzzStatus = roomInfo ? roomInfo.buzz_status : 'locked'; 
+      
+      // Lưu trữ thời gian cũ TRƯỚC KHI gán lại roomInfo
+      const oldAnswerStartTime = answerStartTime;
       const oldBuzzStartTime = buzzStartTime;
       
       roomInfo = room; // Cập nhật trạng thái mới
       
-      // Xử lý trạng thái Đáp án
+      // --- Xử lý trạng thái Đáp án ---
+      const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+
       if (room.answer_status === 'open') {
-        answerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+        answerStartTime = newAnswerStartTime;
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
         
@@ -874,26 +879,30 @@
             fetchAnswers();
         }
       } else { // 'locked' or 'pending_open'
-        answerStartTime = 0;
+        answerStartTime = 0; 
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = 0;
         lockedAnswer = true; 
 
-        // Đảm bảo xóa bảng trên các máy khác khi trạng thái chuyển sang 'locked' (sau khi Host/Manager bấm Lock hoặc Reset)
-        if (room.answer_status === 'locked' && oldAnswerStatus !== 'locked') {
+        // Xử lý xóa data Answers: Kích hoạt khi:
+        // 1. Trạng thái chuyển từ 'open' sang 'locked' (Lock hoặc Reset từ trạng thái mở)
+        // 2. HOẶC trạng thái là 'locked' VÀ thời gian mở CŨ (trước khi update) KHÁC 0. 
+        //    (Điều này đảm bảo xóa bảng sau khi Reset từ trạng thái Khóa)
+        if (
+            (room.answer_status === 'locked' && oldAnswerStatus !== 'locked') || 
+            (room.answer_status === 'locked' && oldAnswerStartTime !== 0) 
+        ) {
             answers = []; 
             renderAnswers();
             fetchAnswers();
         }
       }
       
-      // Xử lý trạng thái Chuông
+      // --- Xử lý trạng thái Chuông ---
       const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
       const buzzDuration = room.buzz_duration || 0;
       
       const isBuzzOpenTimeChanged = newBuzzStartTime !== oldBuzzStartTime;
-      const isBuzzStatusChangedToLocked = room.buzz_status === 'locked' && (roomInfo ? roomInfo.buzz_status : 'locked') !== 'locked';
-      const isBuzzResetToPending = room.buzz_status === 'pending_open' && (roomInfo ? roomInfo.buzz_status : 'locked') !== 'pending_open';
 
       if (room.buzz_status === 'open') {
           buzzStartTime = newBuzzStartTime;
@@ -901,7 +910,7 @@
           buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
           
           const currentServerTime = Date.now() + serverTimeOffset;
-          if (buzzDurationLimit > 0 && buzzEndTime > 0 && answerEndTime <= currentServerTime) {
+          if (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime) { // Đã sửa lỗi: dùng buzzEndTime
               lockedBuzz = true;
           } else {
               lockedBuzz = false;
@@ -914,11 +923,16 @@
           lockedBuzz = true; 
       }
 
-      // Xử lý xóa data: Kích hoạt khi:
-      // 1. Chuông được mở (thời gian thay đổi, tức là bắt đầu/kích hoạt lại từ đầu)
-      // 2. Trạng thái chuyển sang 'locked' (do Host/Manager bấm Lock hoặc Reset từ trạng thái mở)
-      // 3. Trạng thái chuyển sang 'pending_open' (chỉ xảy ra khi Reset từ trạng thái mở vĩnh viễn)
-      if (isBuzzOpenTimeChanged || isBuzzStatusChangedToLocked || isBuzzResetToPending) {
+      // Xử lý xóa data Buzz: Kích hoạt khi:
+      // 1. Chuông được mở (thời gian thay đổi: isBuzzOpenTimeChanged)
+      // 2. HOẶC trạng thái là 'locked' VÀ thời gian mở CŨ khác 0. 
+      //    (Đảm bảo xóa sau khi Reset từ trạng thái Khóa)
+      // 3. HOẶC trạng thái chuyển sang 'pending_open' (Reset từ Mở Vĩnh Viễn)
+      if (
+          isBuzzOpenTimeChanged || 
+          (room.buzz_status === 'locked' && oldBuzzStartTime !== 0) || 
+          (room.buzz_status === 'pending_open' && oldBuzzStatus !== 'pending_open') 
+      ) {
           buzzOrder = []; 
           renderBuzz(); 
           // Chỉ fetch lại nếu không phải là lệnh reset đã xóa data ở máy khác (vì data đã bị xóa trên DB rồi)
