@@ -15,14 +15,15 @@
         #headerContainer {
             margin-bottom: 20px;
             padding: 10px;
-            background: yellow;
+            /* Đã chỉnh lại màu nền theo file Host gần nhất */
+            background: yellow; 
             text-align: center;
             border-radius: 5px;
         }
 
         #headerContainer h2 {
             margin: 0;
-            /* ĐIỀU CHỈNH: Tiêu đề Kết quả */
+            /* Yêu cầu: Chữ Kết quả: Chữ đậm, màu green */
             font-weight: bold; 
             color: green;
         }
@@ -53,17 +54,56 @@
 
         #sortOptions label {
             cursor: pointer;
-            /* ĐIỀU CHỈNH: Màu chữ cho tùy chọn sắp xếp */
+            /* Yêu cầu: 2 dòng chữ...: Chữ đậm, màu red */
             color: red;
             font-weight: bold;
         }
 
         #displayOptions label {
             cursor: pointer;
-            /* ĐIỀU CHỈNH: Màu chữ cho tùy chọn hiển thị */
+            /* Yêu cầu: Ẩn/Hiện thời gian: Chữ đậm màu purple */
             color: purple;
             font-weight: bold;
         }
+        
+        /* BẮT ĐẦU PHẦN CHỈNH SỬA CHO RADIO BUTTON */
+        input[type="radio"] {
+            /* Ẩn radio button gốc */
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            
+            /* Tạo hình dạng ô tròn mới */
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ff00cc; /* Màu viền */
+            border-radius: 50%;
+            display: inline-block;
+            position: relative;
+            cursor: pointer;
+            top: 2px;
+            margin-right: 5px; /* Khoảng cách với chữ */
+            outline: none;
+        }
+
+        input[type="radio"]:checked {
+            border-color: orange; 
+        }
+
+        input[type="radio"]:checked::after {
+            /* TẠO CHẤM TRÒN MÀU VÀNG BÊN TRONG */
+            content: '';
+            width: 10px;
+            height: 10px;
+            background-color: blue;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            display: block;
+        }
+        /* KẾT THÚC PHẦN CHỈNH SỬA CHO RADIO BUTTON */
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -222,11 +262,11 @@
             await fetchParticipants();
             await fetchAndRender();
 
-            // Realtime: Lắng nghe thay đổi bảng Answers (Insert/Delete)
+            // Realtime: Lắng nghe thay đổi bảng Answers (Insert/Delete/Update)
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
                     () => { 
-                        // Sự kiện DELETE xảy ra khi Host Reset -> buộc fetch lại
+                        // Sự kiện này đảm bảo fetch lại khi có đáp án mới hoặc khi Host reset (DELETE)
                         fetchAndRender(); 
                     })
                 .subscribe();
@@ -235,10 +275,9 @@
             supabase.channel('room_channel')
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
                     (payload) => {
-                        // Cập nhật roomStartTime
+                        // Cập nhật roomStartTime khi Host mở/reset đáp án
                         if ('answer_open_time' in payload.new) {
                             roomStartTime = payload.new.answer_open_time ? new Date(payload.new.answer_open_time).getTime() : 0;
-                            //ĐÃ SỬA: Thay render() bằng fetchAndRender() để đảm bảo đồng bộ dữ liệu sau khi Host Reset
                             fetchAndRender(); 
                         }
                     })
