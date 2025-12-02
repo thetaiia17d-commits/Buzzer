@@ -489,8 +489,6 @@
     }
 
     function formatTimeDisplay(isoDate, startTime) {
-      // Logic cũ: nếu startTime = 0 (bị reset) thì trả về N/A
-      // Logic mới: startTime sẽ được giữ lại khi Khóa, nên vẫn hiển thị số
       if (!startTime || !isoDate) return "N/A";
       const ts = new Date(isoDate).getTime();
       let diff = ts - startTime;
@@ -533,8 +531,15 @@
 
       if (!aDisp || !bDisp) return;
 
+      // --- LOGIC: CLAMP MAX VALUE ---
+      // Nếu vừa mới bấm (do chênh lệch thời gian), thời gian còn lại có thể > duration một chút
+      // Ta sẽ ép nó hiển thị bằng Duration để người dùng thấy "đúng từng tích tắc"
+      
       if (!lockedAnswer && answerDurationLimit > 0 && answerEndTime > 0) {
-        const remain = answerEndTime - currentServerTime;
+        let remain = answerEndTime - currentServerTime;
+        const maxMs = answerDurationLimit * 1000;
+        if (remain > maxMs) remain = maxMs;
+
         if (remain <= 0) {
           lockedAnswer = true;
           updateUI();
@@ -549,7 +554,10 @@
       }
 
       if (!lockedBuzz && buzzDurationLimit > 0 && buzzEndTime > 0) {
-        const remain = buzzEndTime - currentServerTime;
+        let remain = buzzEndTime - currentServerTime;
+        const maxMs = buzzDurationLimit * 1000;
+        if (remain > maxMs) remain = maxMs;
+
         if (remain <= 0) {
           lockedBuzz = true;
           updateUI();
@@ -562,7 +570,7 @@
       } else {
         bDisp.innerText = "";
       }
-    }, 100);
+    }, 30); // Cập nhật nhanh 30ms để mượt mà
 
     // --- RENDER FUNCTIONS ---
     function renderAnswers() {
@@ -616,7 +624,6 @@
       Array.from(uniqueBuzzMap.values()).forEach(item => {
         const row = tblBuzzBody.insertRow();
         row.insertCell().innerText = item.name;
-        // Vì buzzStartTime bây giờ được giữ lại khi Khóa, nên hàm này sẽ hiển thị thời gian đúng
         row.insertCell().innerText = formatTimeDisplay(item.created_at, buzzStartTime);
       });
     }
@@ -790,13 +797,11 @@
     }
 
     function handleRoomUpdate(room) {
-      // Lưu lại giá trị buzzStartTime cũ để so sánh
       const oldBuzzStartTime = buzzStartTime;
 
       lockedAnswer = room.answer_status === 'locked';
       lockedBuzz = room.buzz_status === 'locked';
 
-      // Xử lý Đáp án (Giữ nguyên)
       if (!room.answer_open_time && room.answer_status === 'locked') {
         answerStartTime = 0;
         answerDurationLimit = 0;
@@ -809,27 +814,21 @@
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
       }
-
-      // --- LOGIC ĐÃ SỬA: Xử lý trạng thái Chuông (đảm bảo xóa bảng khi có Reset) ---
       
       const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
       const buzzDuration = room.buzz_duration || 0;
       
-      // Cờ phát hiện sự thay đổi trạng thái (Bắt đầu/Reset)
       const isStatusChanged = newBuzzStartTime !== oldBuzzStartTime;
 
-      // Cập nhật các biến global
       buzzStartTime = newBuzzStartTime;
       buzzDurationLimit = buzzDuration;
       buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
 
       if (isStatusChanged) {
-          // Khi có thay đổi thời gian bắt đầu (bao gồm Reset Locked/Reset Permanent)
           buzzOrder = []; 
-          renderBuzz(); // Xóa sạch bảng hiển thị ngay lập tức
-          fetchBuzz(); // Tải lại data (sẽ là data trống sau khi Reset)
+          renderBuzz(); 
+          fetchBuzz(); 
       } else if (!room.buzz_open_time && room.buzz_status === 'locked') {
-          // Trường hợp Reset về Locked hoặc khóa lại (đảm bảo local data = 0)
           buzzStartTime = 0;
           buzzDurationLimit = 0;
           buzzEndTime = 0;
@@ -905,7 +904,7 @@
       });
     }
 
-    // --- LOGIC ĐIỀU KHIỂN PHÒNG (QUAN TRỌNG: SỬA ĐỔI) ---
+    // --- LOGIC ĐIỀU KHIỂN PHÒNG ---
 
     function setupRoom(code, name, role) {
       currentRoom = code;
@@ -929,27 +928,43 @@
       let successMsg = isAnswer ? "Đã cập nhật trạng thái đáp án!" : "Đã cập nhật trạng thái chuông!";
       let errorMsg = isAnswer ? "Lỗi cập nhật!" : "Lỗi cập nhật!";
 
+      // --- SỬA ĐỔI QUAN TRỌNG: INSTANT START ---
+      const nowMs = Date.now() + serverTimeOffset; // Không cộng thêm delay!
+      const nowISO = new Date(nowMs).toISOString();
+
       updateData[statusField] = status;
 
       if (status === 'open') {
-        // --- SỬA ĐỔI: Bù trừ độ trễ mạng 500ms (0.5s) ---
-        const estimatedServerTime = Date.now() + serverTimeOffset + 300;
-        const compensatedNowISO = new Date(estimatedServerTime).toISOString();
-
-        updateData[timeField] = compensatedNowISO; // Sử dụng thời gian đã bù trừ
+        updateData[timeField] = nowISO; 
         updateData[durationField] = duration;
-
-        if (duration > 0) {
-            if (isAnswer) {
-                await supabase.from('answers').delete().eq('room_code', currentRoom);
-            } else {
-                await supabase.from('buzzes').delete().eq('room_code', currentRoom);
-            }
-        }
-
       } else if (status === 'locked') {
-        // Khi Khóa, KHÔNG xóa timeField (open_time) để máy Host/Result vẫn tính được thời gian
         updateData[durationField] = 0;
+      }
+
+      // --- OPTIMISTIC UI UPDATE: Cập nhật giao diện Host NGAY LẬP TỨC ---
+      // Tạo một object room giả lập trạng thái mới để cập nhật ngay trên máy Host
+      // mà không cần đợi Supabase phản hồi.
+      const optimisticRoom = {
+          answer_status: isAnswer ? status : (lockedAnswer ? 'locked' : 'open'),
+          answer_open_time: isAnswer && status === 'open' ? nowISO : (lockedAnswer ? null : new Date(answerStartTime).toISOString()),
+          answer_duration: isAnswer ? duration : answerDurationLimit,
+          
+          buzz_status: !isAnswer ? status : (lockedBuzz ? 'locked' : 'open'),
+          buzz_open_time: !isAnswer && status === 'open' ? nowISO : (lockedBuzz ? null : new Date(buzzStartTime).toISOString()),
+          buzz_duration: !isAnswer ? duration : buzzDurationLimit
+      };
+      
+      // Gọi hàm cập nhật giao diện ngay lập tức
+      handleRoomUpdate(optimisticRoom);
+
+      // --- GỬI LÊN SERVER ---
+      // Nếu mở chuông/đáp án mới thì xóa dữ liệu cũ
+      if (status === 'open' && duration > 0) {
+        if (isAnswer) {
+            await supabase.from('answers').delete().eq('room_code', currentRoom);
+        } else {
+            await supabase.from('buzzes').delete().eq('room_code', currentRoom);
+        }
       }
 
       const { error } = await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
@@ -965,23 +980,20 @@
       let roomUpdate = {};
 
       if (isAnswer) {
-        // Reset đáp án: Xóa thời gian bắt đầu (về null) -> Result view sẽ clear
         roomUpdate = { answer_open_time: null, answer_duration: 0, answer_status: 'locked' };
       } else {
         const isPermanent = !lockedBuzz && buzzDurationLimit === 0;
         if (isPermanent) {
-          // YÊU CẦU: Nếu đang Mở Vĩnh Viễn, giữ trạng thái 'open', cập nhật thời gian bắt đầu mới.
-          // SỬA ĐỔI: Bù trừ độ trễ mạng 500ms (0.5s) cho thời gian bắt đầu mới.
-          const estimatedServerTime = Date.now() + serverTimeOffset + 300;
-          const compensatedNowISO = new Date(estimatedServerTime).toISOString();
+          // Reset permanent cũng dùng thời gian hiện tại
+          const nowMs = Date.now() + serverTimeOffset;
+          const nowISO = new Date(nowMs).toISOString();
           
           roomUpdate = {
-            buzz_open_time: compensatedNowISO, // Cập nhật thời gian mới đã bù trừ
+            buzz_open_time: nowISO, 
             buzz_duration: 0,
-            buzz_status: 'open' // Giữ nguyên Mở vĩnh viễn
+            buzz_status: 'open'
           };
         } else {
-          // Trường hợp Khóa hoặc Mở giới hạn: Reset về Khóa
           roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
         }
       }
@@ -989,17 +1001,14 @@
       let successMsg = isAnswer ? "Đã xóa hết đáp án và khóa!" : "Đã xóa hết chuông (Reset)!";
       let errorMsg = isAnswer ? "Lỗi reset đáp án!" : "Lỗi reset chuông!";
 
-      // 1. Cập nhật trạng thái phòng (gửi tín hiệu Reset/Reopen)
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
       if (roomError) return showPopup(errorMsg, "error");
 
-      // 2. LUÔN XÓA DỮ LIỆU CHUÔNG (Đảm bảo bảng kết quả trống trên mọi máy)
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
 
       if (dataError) {
         showPopup(errorMsg, "error");
       } else {
-        // 3. Cập nhật dữ liệu local trên máy này
         if (isAnswer) {
           answers = [];
           answerStartTime = 0;
@@ -1009,8 +1018,6 @@
           renderAnswers();
         } else {
           buzzOrder = [];
-
-          // SỬA ĐỔI: Cập nhật biến local dựa trên roomUpdate đã gửi lên DB để đồng bộ
           buzzDurationLimit = roomUpdate.buzz_duration;
           lockedBuzz = roomUpdate.buzz_status === 'locked';
 
