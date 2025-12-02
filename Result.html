@@ -15,7 +15,7 @@
         #headerContainer {
             margin-bottom: 20px;
             padding: 10px;
-            background: yellow; 
+            background: yellow;
             text-align: center;
             border-radius: 5px;
         }
@@ -23,7 +23,7 @@
         #headerContainer h2 {
             margin: 0;
             /* Yêu cầu: Chữ Kết quả: Chữ đậm, màu green */
-            font-weight: bold; 
+            font-weight: bold;
             color: green;
         }
 
@@ -40,7 +40,8 @@
             font-size: 1.2em;
         }
 
-        #sortOptions, #displayOptions {
+        #sortOptions,
+        #displayOptions {
             font-family: Arial, sans-serif;
             margin-bottom: 10px;
             font-weight: bold;
@@ -64,30 +65,32 @@
             color: purple;
             font-weight: bold;
         }
-        
+
         /* BẮT ĐẦU PHẦN CHỈNH SỬA CHO RADIO BUTTON (Màu vàng) */
         input[type="radio"] {
             /* Ẩn radio button gốc */
             -webkit-appearance: none;
             -moz-appearance: none;
             appearance: none;
-            
+
             /* Tạo hình dạng ô tròn mới */
             width: 16px;
             height: 16px;
-            border: 2px solid #ff00cc; /* Màu viền */
+            border: 2px solid #ff00cc;
+            /* Màu viền */
             border-radius: 50%;
             display: inline-block;
             position: relative;
             cursor: pointer;
             top: 2px;
-            margin-right: 5px; /* Khoảng cách với chữ */
+            margin-right: 5px;
+            /* Khoảng cách với chữ */
             outline: none;
         }
 
         input[type="radio"]:checked {
             /* Thay đổi màu viền khi được chọn (Màu vàng) */
-            border-color: orange; 
+            border-color: orange;
         }
 
         input[type="radio"]:checked::after {
@@ -95,7 +98,8 @@
             content: '';
             width: 10px;
             height: 10px;
-            background-color: blue; /* MÀU VÀNG (YELLOW) */
+            background-color: blue;
+            /* MÀU VÀNG (YELLOW) */
             position: absolute;
             top: 50%;
             left: 50%;
@@ -103,6 +107,7 @@
             border-radius: 50%;
             display: block;
         }
+
         /* KẾT THÚC PHẦN CHỈNH SỬA CHO RADIO BUTTON */
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -131,7 +136,7 @@
             <input type="radio" name="displayOption" value="hide" onchange="render()"> Ẩn thời gian
         </label>
     </div>
-    
+
     <div id="resultsContainer">Đang tải...</div>
 
     <script>
@@ -150,11 +155,15 @@
 
         async function fetchParticipants() {
             if (!roomCode) return;
-            const { data } = await supabase
+            const {
+                data
+            } = await supabase
                 .from('participants')
                 .select('name, created_at')
                 .eq('room_code', roomCode)
-                .order('created_at', { ascending: true });
+                .order('created_at', {
+                    ascending: true
+                });
 
             if (data) {
                 allParticipants = data.filter(p => !p.name.startsWith("SYNC_TIME_"));
@@ -163,7 +172,10 @@
 
         async function fetchRoomInfo() {
             if (!roomCode) return;
-            const { data: room, error } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
+            const {
+                data: room,
+                error
+            } = await supabase.from('rooms').select('answer_open_time').eq('room_code', roomCode).single();
             if (error) {
                 console.error("Lỗi lấy thông tin phòng:", error.message);
                 return;
@@ -176,7 +188,14 @@
 
         async function fetchAndRender() {
             if (!roomCode) return;
-            const { data, error } = await supabase
+            // 1. Cập nhật thông tin phòng trước (để đảm bảo roomStartTime là mới nhất)
+            await fetchRoomInfo(); 
+            
+            // 2. Lấy đáp án
+            const {
+                data,
+                error
+            } = await supabase
                 .from('answers')
                 .select('*')
                 .eq('room_code', roomCode);
@@ -185,7 +204,7 @@
                 console.error("Lỗi lấy đáp án:", error.message);
                 return;
             }
-            
+
             // Khi Host Reset -> data sẽ rỗng
             answers = data || [];
             render();
@@ -193,13 +212,14 @@
 
         function render() {
             resultsContainer.innerHTML = '';
-            
+
             // Logic kiểm tra mảng rỗng để hiển thị thông báo
             if (answers.length === 0) {
                 resultsContainer.innerHTML = '<p style="text-align:center">Chưa có dữ liệu</p>';
                 return;
             }
 
+            // Lấy đáp án mới nhất của từng người chơi
             const latestAnswersMap = new Map();
             answers.forEach(item => {
                 const existing = latestAnswersMap.get(item.name);
@@ -210,9 +230,9 @@
 
             let displayData = Array.from(latestAnswersMap.values());
             const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
-            // Lấy tùy chọn hiển thị thời gian mới
             const displayOption = document.querySelector('input[name="displayOption"]:checked')?.value || 'show';
 
+            // Sắp xếp dữ liệu
             if (sortOption === "time") {
                 displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             } else if (sortOption === "join") {
@@ -226,26 +246,73 @@
                 });
             }
 
+            // Thêm người chơi chưa trả lời vào cuối (để đảm bảo danh sách đủ người)
+            const answeredNames = displayData.map(d => d.name);
+            allParticipants.forEach(p => {
+                if (!answeredNames.includes(p.name)) {
+                    // Thêm một item "giả" để hiển thị tên người chơi chưa trả lời
+                    displayData.push({
+                        name: p.name,
+                        answer_text: "[Chưa trả lời]",
+                        created_at: null
+                    });
+                }
+            });
+
+            // Sau khi thêm người chưa trả lời, cần sắp xếp lại để họ nằm ở cuối
+            displayData.sort((a, b) => {
+                const timeA = a.created_at ? new Date(a.created_at).getTime() : Infinity;
+                const timeB = b.created_at ? new Date(b.created_at).getTime() : Infinity;
+
+                if (sortOption === "time") {
+                    return timeA - timeB; // Thời gian trả lời: Sớm nhất lên trên, chưa trả lời xuống cuối
+                } else if (sortOption === "join") {
+                    // Nếu cả 2 đều đã trả lời hoặc chưa trả lời, sắp xếp theo thứ tự vào phòng
+                    if (timeA === Infinity && timeB === Infinity || timeA !== Infinity && timeB !== Infinity) {
+                        const orderMap = {};
+                        allParticipants.forEach((p, idx) => orderMap[p.name] = idx);
+                        const idxA = orderMap[a.name] !== undefined ? orderMap[a.name] : 9999;
+                        const idxB = orderMap[b.name] !== undefined ? orderMap[b.name] : 9999;
+                        return idxA - idxB;
+                    }
+                    return timeA === Infinity ? 1 : -1; // Chưa trả lời xuống cuối
+                }
+                return 0;
+            });
+
+
+            // Hiển thị kết quả
             displayData.forEach(item => {
-                const submitTime = new Date(item.created_at).getTime();
+                const submitTime = item.created_at ? new Date(item.created_at).getTime() : 0;
                 let diff = 0;
-                // Chỉ tính thời gian nếu roomStartTime hợp lệ
+                let timeStyle = 'color: #888;';
+
+                // Chỉ tính thời gian nếu roomStartTime hợp lệ và có thời gian submit
                 if (roomStartTime && submitTime > roomStartTime) {
                     diff = (submitTime - roomStartTime) / 1000;
+                    timeStyle = 'color: blue;';
                 }
-                
+
                 let timeStr = '';
                 // Áp dụng logic ẩn/hiện thời gian
                 if (displayOption === 'show') {
-                    timeStr = (roomStartTime && diff > 0) ? ` | ${diff.toFixed(3)}s` : ' | N/A';
+                    if (roomStartTime && diff > 0) {
+                        timeStr = `<span style="${timeStyle}"> | ${diff.toFixed(3)}s</span>`;
+                    } else if (submitTime > 0) {
+                        // Trường hợp đã trả lời nhưng không tính được thời gian (do Host chưa mở)
+                        timeStr = `<span style="color: red;"> | Đã trả lời</span>`;
+                    } else {
+                        timeStr = `<span style="${timeStyle}"> | N/A</span>`;
+                    }
                 }
-                
+
                 const answerText = item.answer_text || item.answer || "[Không có đáp án]";
 
                 const div = document.createElement('div');
                 div.className = 'result-row';
-                // Điều chỉnh hiển thị để bao gồm/loại trừ timeStr
-                div.textContent = `${item.name} | ${answerText}${timeStr}`;
+
+                // Điều chỉnh để tên người chơi có màu Đỏ
+                div.innerHTML = `<span style="color: red;">${item.name}</span> | ${answerText}${timeStr}`;
                 resultsContainer.appendChild(div);
             });
         }
@@ -258,37 +325,56 @@
             }
             roomStatus.innerText = "Phòng: " + roomCode;
 
+            // Tải thông tin ban đầu
             await fetchRoomInfo();
             await fetchParticipants();
             await fetchAndRender();
 
+            // --- Realtime Subscriptions ---
+
             // Realtime: Lắng nghe thay đổi bảng Answers (Insert/Delete/Update)
             supabase.channel('answers_channel')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
-                    () => { 
-                        // THAY ĐỔI QUAN TRỌNG: Thêm độ trễ để tránh Race Condition (Lỗi đồng bộ Realtime)
+                .on('postgres_changes', {
+                        event: '*',
+                        schema: 'public',
+                        table: 'answers',
+                        filter: `room_code=eq.${roomCode}`
+                    },
+                    () => {
+                        // THAY ĐỔI QUAN TRỌNG: Thêm độ trễ để tránh Race Condition và gọi lại fetchAndRender
                         setTimeout(() => {
-                            fetchAndRender(); 
+                            fetchAndRender();
                         }, 200);
                     })
                 .subscribe();
 
-            // Realtime: Lắng nghe thay đổi thông tin Phòng (để cập nhật mốc thời gian)
+            // Realtime: Lắng nghe thay đổi thông tin Phòng (để cập nhật mốc thời gian khi Host Reset/Open)
             supabase.channel('room_channel')
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${roomCode}` },
+                .on('postgres_changes', {
+                        event: 'UPDATE',
+                        schema: 'public',
+                        table: 'rooms',
+                        filter: `room_code=eq.${roomCode}`
+                    },
                     (payload) => {
                         // Cập nhật roomStartTime khi Host mở/reset đáp án
                         if ('answer_open_time' in payload.new) {
                             roomStartTime = payload.new.answer_open_time ? new Date(payload.new.answer_open_time).getTime() : 0;
-                            fetchAndRender(); 
+                            fetchAndRender();
                         }
                     })
                 .subscribe();
 
+            // Realtime: Lắng nghe thay đổi danh sách người chơi (để cập nhật thứ tự "Theo thứ tự vào phòng")
             supabase.channel('participants_channel')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${roomCode}` },
-                    () => { 
-                        fetchParticipants().then(render); 
+                .on('postgres_changes', {
+                        event: '*',
+                        schema: 'public',
+                        table: 'participants',
+                        filter: `room_code=eq.${roomCode}`
+                    },
+                    () => {
+                        fetchParticipants().then(render);
                     })
                 .subscribe();
         }
