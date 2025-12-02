@@ -1098,7 +1098,7 @@
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
       if (dataError) return showPopup(errorMsg, "error");
       
-      // BỔ SUNG: Xóa data cục bộ và render lại ngay trên máy đang thao tác
+      // BỔ SUNG: Xóa data cục bộ và render lại ngay trên máy đang thao tác (Tức thì)
       if (isAnswer) {
         answers = []; 
         renderAnswers();
@@ -1112,7 +1112,7 @@
       if (roomError) {
         showPopup(errorMsg, "error");
       } else {
-        fetchRoomStatus(); // Cập nhật lại trạng thái phòng
+        fetchRoomStatus(); // Kích hoạt sự kiện Realtime (handleRoomUpdate) trên các máy khác
         showPopup(successMsg);
       }
     }
