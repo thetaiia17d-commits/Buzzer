@@ -679,7 +679,7 @@
       });
     }
 
-    function renderUserListPopup() { /* ... (Giữ nguyên) ... */
+    function renderUserListPopup() {
       const ul = document.querySelector("#listPopup ul");
       if (!ul) return;
       ul.innerHTML = "";
@@ -687,12 +687,34 @@
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => {
         if (u.name.startsWith("SYNC_TIME_")) return;
+        // Đảm bảo mỗi người chỉ xuất hiện 1 lần
         if (!uniqueParticipantsMap.has(u.name)) {
           uniqueParticipantsMap.set(u.name, u);
         }
       });
 
-      let displayUsers = Array.from(uniqueParticipantsMap.values()).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      let displayUsers = Array.from(uniqueParticipantsMap.values());
+
+      // --- SỬA ĐỔI: Logic sắp xếp mới ---
+      displayUsers.sort((a, b) => {
+        // 1. Định nghĩa độ ưu tiên cho vai trò
+        const getRolePriority = (role) => {
+          if (role === 'host') return 1;     // Ưu tiên cao nhất
+          if (role === 'manager') return 2;  // Ưu tiên nhì
+          return 3;                          // Thí sinh (thấp nhất)
+        };
+
+        const prioA = getRolePriority(a.role);
+        const prioB = getRolePriority(b.role);
+
+        // 2. So sánh theo vai trò trước
+        if (prioA !== prioB) {
+          return prioA - prioB; // Số nhỏ hơn xếp trước
+        }
+
+        // 3. Nếu cùng vai trò, so sánh thời gian (ai vào trước xếp trước)
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
 
       displayUsers.forEach(u => {
         const li = document.createElement("li");
