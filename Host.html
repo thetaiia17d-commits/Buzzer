@@ -1086,7 +1086,7 @@
         if (roomInfo && roomInfo.buzz_status === 'open' && roomInfo.buzz_duration === 0) {
           // Mở vĩnh viễn, reset chuông và chuyển về trạng thái chờ mở để thí sinh kích hoạt lại
           roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'pending_open' }; 
-          successMsg = "Đã xóa hết chuông (Reset) và giữ nguyên trạng thái mở vĩnh viễn!";
+          successMsg = "Đã Reset chuông!";
         } else {
           // Các trường hợp khác, khóa và xóa data
           roomUpdate = { buzz_open_time: null, buzz_duration: 0, buzz_status: 'locked' };
@@ -1097,7 +1097,16 @@
       
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
       if (dataError) return showPopup(errorMsg, "error");
-
+      
+      // BỔ SUNG: Xóa data cục bộ và render lại ngay trên máy đang thao tác
+      if (isAnswer) {
+        answers = []; 
+        renderAnswers();
+      } else {
+        buzzOrder = []; 
+        renderBuzz();
+      }
+      
       const { error: roomError } = await supabase.from('rooms').update(roomUpdate).eq('room_code', currentRoom);
 
       if (roomError) {
