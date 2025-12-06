@@ -243,7 +243,6 @@
         return;
       }
       
-      // Nếu duration là 0, tức là Mở Vĩnh Viễn, không cần hẹn giờ
       if (duration <= 0) {
         el.innerText = "--.--s";
         return;
@@ -252,7 +251,6 @@
       const sharedStartTime = new Date(startTimeISO).getTime();
       const localEndTime = sharedStartTime + (duration * 1000);
       
-      // Hiển thị ngay lập tức (loại bỏ độ trễ 30ms ban đầu)
       const now = getServerTimeNow();
       let initialRemain = localEndTime - now;
       initialRemain = initialRemain > 0 ? initialRemain : 0;
@@ -275,7 +273,7 @@
       if (elementId === 'buzzCountdown') buzzInterval = interval;
     }
 
-    // --- THAM GIA PHÒNG (Giữ nguyên) ---
+    // --- THAM GIA PHÒNG ---
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
@@ -363,21 +361,14 @@
     }
 
     async function handleRoomUpdate(roomData) {
-      // ANSWER LOGIC
       if (roomData.answer_status === 'pending_open') {
-        // BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU
         const start_time_iso = new Date(getServerTimeNow()).toISOString();
         const duration = roomData.answer_duration;
         
-        // Cập nhật DB (Bật trạng thái OPEN)
-        const { error } = await supabase.from('rooms').update({
+        await supabase.from('rooms').update({
           answer_status: 'open',
           answer_open_time: start_time_iso
         }).eq('room_code', myRoom);
-        
-        if (error) {
-            console.error("Lỗi cập nhật start time (Answer):", error);
-        }
 
         updateAnswerUI(false);
         startTimer('answerCountdown', start_time_iso, duration, () => {
@@ -385,70 +376,65 @@
         });
         
       } else if (roomData.answer_status === 'open') {
-        // Contestant đã nhận được tín hiệu OPEN (từ chính nó hoặc Contestant khác)
         updateAnswerUI(false);
         startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => {
           updateAnswerUI(true);
         });
-      } else { // 'locked'
+      } else { 
         updateAnswerUI(true);
         document.getElementById('answerCountdown').innerText = "0.000s";
         if (answerInterval) clearInterval(answerInterval);
       }
 
-      // BUZZ LOGIC
       if (roomData.buzz_status === 'pending_open') {
-        // BƯỚC 2: CONTESTANT KÍCH HOẠT THỜI GIAN BẮT ĐẦU
         const start_time_iso = new Date(getServerTimeNow()).toISOString();
         const duration = roomData.buzz_duration;
-        
-        // ** Quan trọng: Nếu là Reset trong Mở Vĩnh Viễn, Contestant phải bấm lại chuông
         hasBuzzed = false;
         
-        // Cập nhật DB (Bật trạng thái OPEN)
-        const { error } = await supabase.from('rooms').update({
+        await supabase.from('rooms').update({
           buzz_status: 'open',
           buzz_open_time: start_time_iso
         }).eq('room_code', myRoom);
 
-        if (error) {
-            console.error("Lỗi cập nhật start time (Buzz):", error);
-        }
-
-        // Bắt đầu đếm ngược ngay lập tức
         updateBuzzUI(false);
         startTimer('buzzCountdown', start_time_iso, duration, () => {
           updateBuzzUI(true);
         });
 
       } else if (roomData.buzz_status === 'open') {
-        // Contestant đã nhận được tín hiệu OPEN
         updateBuzzUI(false);
         startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
           updateBuzzUI(true);
         });
-      } else { // 'locked'
+      } else { 
         updateBuzzUI(true);
         document.getElementById('buzzCountdown').innerText = "0.000s";
         if (buzzInterval) clearInterval(buzzInterval);
       }
     }
 
-    // --- GỬI ĐÁP ÁN (Giữ nguyên) ---
+    // --- GỬI ĐÁP ÁN (ĐÃ SỬA: Gửi kèm Client Time) ---
     btnSend.onclick = async () => {
       if (lockedAnswer) return showPopup("Đang khóa!", "error");
       const text = answerTextArea.value.trim();
       if (!text) return showPopup("Nhập đáp án!", "error");
 
+      // 1. Chặn UI ngay lập tức
       btnSend.disabled = true; 
       showPopup("Đang gửi..."); 
+      
+      // 2. Lấy thời gian đồng bộ ngay thời điểm bấm (Client Time)
+      const clientTimeISO = new Date(getServerTimeNow()).toISOString();
+
       answerTextArea.value = "";
       answerTextArea.focus();
 
+      // 3. Gửi 'created_at' thủ công để Host tính toán chính xác
       const { error } = await supabase.from('answers').insert([{
         room_code: myRoom,
         name: myName,
-        answer_text: text
+        answer_text: text,
+        created_at: clientTimeISO // <--- QUAN TRỌNG: Loại bỏ độ trễ mạng
       }]);
 
       if (!error) {
@@ -462,17 +448,23 @@
       }
     };
 
-    // --- BẤM CHUÔNG (Giữ nguyên) ---
+    // --- BẤM CHUÔNG (ĐÃ SỬA: Gửi kèm Client Time) ---
     btnBuzz.onclick = async () => {
       if (lockedBuzz || hasBuzzed) return;
 
+      // 1. Chặn UI ngay lập tức
       hasBuzzed = true;
       updateBuzzUI(true);
       showPopup("Đã bấm chuông!");
       
+      // 2. Lấy thời gian đồng bộ ngay thời điểm bấm
+      const clientTimeISO = new Date(getServerTimeNow()).toISOString();
+
+      // 3. Gửi 'created_at' thủ công
       const { error } = await supabase.from('buzzes').insert([{
         room_code: myRoom,
-        name: myName
+        name: myName,
+        created_at: clientTimeISO // <--- QUAN TRỌNG
       }]);
 
       if (error) {
