@@ -687,7 +687,7 @@
 
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => {
-        if (u.name.startsWith("SYNC_TIME_")) return;
+        // CŨ: if (u.name.startsWith("SYNC_TIME_")) return; -> XÓA DÒNG NÀY ĐỂ HIỆN SYNC
         if (!uniqueParticipantsMap.has(u.name)) {
           uniqueParticipantsMap.set(u.name, u);
         }
@@ -696,32 +696,50 @@
       let displayUsers = Array.from(uniqueParticipantsMap.values());
 
       displayUsers.sort((a, b) => {
-        const getRolePriority = (role) => {
-          if (role === 'host') return 1;     
-          if (role === 'manager') return 2;  
-          return 3;                          
+        // Hàm tính độ ưu tiên
+        const getPriority = (user) => {
+          if (user.role === 'host') return 1;     // Ưu tiên 1: Host
+          if (user.role === 'manager') return 2;  // Ưu tiên 2: Quản lý
+          if (user.name.startsWith("SYNC_")) return 4; // Ưu tiên 4: User hệ thống (xếp cuối)
+          return 3;                               // Ưu tiên 3: Thí sinh thường
         };
 
-        const prioA = getRolePriority(a.role);
-        const prioB = getRolePriority(b.role);
+        const prioA = getPriority(a);
+        const prioB = getPriority(b);
 
+        // Nếu khác cấp độ ưu tiên thì xếp theo cấp độ
         if (prioA !== prioB) {
           return prioA - prioB; 
         }
+        // Nếu cùng cấp độ thì xếp theo thời gian vào phòng
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
       displayUsers.forEach(u => {
         const li = document.createElement("li");
-        let roleSpan = '';
+        
+        let nameHtml = "";
+        let roleSpan = "";
+
         if (u.role === 'host') {
-          roleSpan = '<span class="role-host" style="font-weight: bold; color: green;">(Host)</span>';
+          // Host: Tên xanh lá, Role xanh lá
+          nameHtml = `<b style="color: green;">${u.name}</b>`;
+          roleSpan = '<span style="font-weight: bold; color: green; margin-left: 5px;">(Host)</span>';
         } else if (u.role === 'manager') {
-          roleSpan = '<span class="role-manager" style="font-weight: bold; color: blue;">(Quản lý)</span>';
+          // Manager: Tên xanh dương, Role xanh dương
+          nameHtml = `<b style="color: blue;">${u.name}</b>`;
+          roleSpan = '<span style="font-weight: bold; color: blue; margin-left: 5px;">(Quản lý)</span>';
+        } else if (u.name.startsWith("SYNC_")) {
+          // SYNC: Tên tím, Role tím
+          nameHtml = `<b style="color: purple;">${u.name}</b>`;
+          roleSpan = '<span style="font-weight: bold; color: purple; margin-left: 5px;">(System)</span>';
         } else {
-          roleSpan = '<span class="role-contestant" style="font-weight: bold;">(Thí sinh)</span>';
+          // Thí sinh: Tên đen, Role đen
+          nameHtml = `<b style="color: black;">${u.name}</b>`;
+          roleSpan = '<span style="font-weight: bold; color: black; margin-left: 5px;">(Thí sinh)</span>';
         }
-        li.innerHTML = `<b>${u.name}</b> ${roleSpan}`;
+
+        li.innerHTML = `${nameHtml} ${roleSpan}`;
         ul.appendChild(li);
       });
     }
