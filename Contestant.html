@@ -214,7 +214,7 @@
 
     function getServerTimeNow() {
       // Thời gian ước tính của Server (Đã đồng bộ)
-      return Date.now() + serverTimeOffset; 
+      return Date.now() + serverTimeOffset;
     }
 
     async function syncServerTime() {
@@ -242,7 +242,7 @@
         el.innerText = "--.--s";
         return;
       }
-      
+
       if (duration <= 0) {
         el.innerText = "--.--s";
         return;
@@ -250,12 +250,12 @@
 
       const sharedStartTime = new Date(startTimeISO).getTime();
       const localEndTime = sharedStartTime + (duration * 1000);
-      
+
       const now = getServerTimeNow();
       let initialRemain = localEndTime - now;
       initialRemain = initialRemain > 0 ? initialRemain : 0;
       el.innerText = (initialRemain / 1000).toFixed(3) + "s";
-      
+
       const interval = setInterval(() => {
         const currentNow = getServerTimeNow();
         let remain = localEndTime - currentNow;
@@ -278,7 +278,7 @@
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
 
-      if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString))) 
+      if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString)))
         return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
       const code = parseInt(codeString);
@@ -338,13 +338,20 @@
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'answers', filter: `room_code=eq.${myRoom}` },
           () => { answerTextArea.value = ""; showPopup("Host đã reset đáp án!"); })
 
-        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` },
-          () => { hasBuzzed = false; updateBuzzUI(lockedBuzz); showPopup("Host đã reset chuông!"); })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` },
+          (payload) => {
+            // Nếu bản ghi mới thêm vào có tên trùng với tên mình -> Khóa ngay
+            if (payload.new.name === myName) {
+              hasBuzzed = true;
+              updateBuzzUI(lockedBuzz);
+              showPopup("Đã bấm chuông!");
+            }
+          })
 
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'participants', filter: `room_code=eq.${myRoom}` },
           (payload) => {
             if (payload.old.name === myName) {
-              location.reload(); 
+              location.reload();
             }
           })
 
@@ -364,7 +371,7 @@
       if (roomData.answer_status === 'pending_open') {
         const start_time_iso = new Date(getServerTimeNow()).toISOString();
         const duration = roomData.answer_duration;
-        
+
         await supabase.from('rooms').update({
           answer_status: 'open',
           answer_open_time: start_time_iso
@@ -374,13 +381,13 @@
         startTimer('answerCountdown', start_time_iso, duration, () => {
           updateAnswerUI(true);
         });
-        
+
       } else if (roomData.answer_status === 'open') {
         updateAnswerUI(false);
         startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => {
           updateAnswerUI(true);
         });
-      } else { 
+      } else {
         updateAnswerUI(true);
         document.getElementById('answerCountdown').innerText = "0.000s";
         if (answerInterval) clearInterval(answerInterval);
@@ -390,7 +397,7 @@
         const start_time_iso = new Date(getServerTimeNow()).toISOString();
         const duration = roomData.buzz_duration;
         hasBuzzed = false;
-        
+
         await supabase.from('rooms').update({
           buzz_status: 'open',
           buzz_open_time: start_time_iso
@@ -406,7 +413,7 @@
         startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
           updateBuzzUI(true);
         });
-      } else { 
+      } else {
         updateBuzzUI(true);
         document.getElementById('buzzCountdown').innerText = "0.000s";
         if (buzzInterval) clearInterval(buzzInterval);
@@ -420,9 +427,9 @@
       if (!text) return showPopup("Nhập đáp án!", "error");
 
       // 1. Chặn UI ngay lập tức
-      btnSend.disabled = true; 
-      showPopup("Đang gửi..."); 
-      
+      btnSend.disabled = true;
+      showPopup("Đang gửi...");
+
       // 2. Lấy thời gian đồng bộ ngay thời điểm bấm (Client Time)
       const clientTimeISO = new Date(getServerTimeNow()).toISOString();
 
@@ -438,12 +445,12 @@
       }]);
 
       if (!error) {
-        showPopup("Đã gửi!"); 
-        btnSend.disabled = false; 
+        showPopup("Đã gửi!");
+        btnSend.disabled = false;
       } else {
         showPopup("Lỗi gửi: " + error.message, "error");
-        answerTextArea.value = text; 
-        btnSend.disabled = false; 
+        answerTextArea.value = text;
+        btnSend.disabled = false;
         console.error("Lỗi gửi đáp án:", error);
       }
     };
@@ -456,7 +463,7 @@
       hasBuzzed = true;
       updateBuzzUI(true);
       showPopup("Đã bấm chuông!");
-      
+
       // 2. Lấy thời gian đồng bộ ngay thời điểm bấm
       const clientTimeISO = new Date(getServerTimeNow()).toISOString();
 
@@ -469,7 +476,7 @@
 
       if (error) {
         hasBuzzed = false;
-        updateBuzzUI(false); 
+        updateBuzzUI(false);
         showPopup("Lỗi bấm: " + error.message, "error");
         console.error("Lỗi bấm chuông:", error);
       }
