@@ -345,12 +345,38 @@
             if (isLocked) {
                 btnSend.classList.add("locked");
                 answerInput.classList.add("input-locked");
+                // Khi khóa thì cho phép bỏ focus
+                answerInput.onblur = null; 
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
-                if (!isLocked) answerInput.focus();
+                
+                // --- SỬA: Tự động focus ngay khi mở ---
+                if (!isLocked) {
+                    setTimeout(() => { answerInput.focus(); }, 50);
+                }
+
+                answerInput.onblur = (e) => {
+                    if (!lockedAnswer) {
+                        // Kiểm tra xem cái vừa bấm vào có phải là nút Send hay Buzz không
+                        // e.relatedTarget là phần tử vừa nhận focus tiếp theo
+                        const dest = e.relatedTarget;
+                        if (dest && (dest.id === 'btnSend' || dest.id === 'btnBuzz')) {
+                            return; // Nếu bấm nút thì cứ để bấm nút
+                        }
+                        // Còn lại (click vùng trống) thì focus lại ngay
+                        setTimeout(() => answerInput.focus(), 10);
+                    }
+                };
             }
         }
+
+        document.addEventListener('click', (e) => {
+            // Nếu đáp án đang mở, và cái click vào không phải là input hay button
+            if (!lockedAnswer && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+                answerInput.focus();
+            }
+        });
 
         function resetAnswerStatusBox() {
             answerStatusBox.innerText = "";
