@@ -35,14 +35,14 @@
             border: 1px solid #ccc;
         }
 
-        /* Game Area ẩn mặc định */
+        /* Game Area: Nới rộng max-width để chứa đủ nút 900px */
         #gameArea {
             display: none;
             flex-direction: column;
             align-items: center;
             width: 100%;
-            max-width: 600px;
-            margin: 100px auto 0 auto;
+            max-width: 1000px; /* Tăng kích thước khung bao */
+            margin: 50px auto 0 auto;
         }
 
         /* Đồng hồ đếm ngược */
@@ -50,61 +50,68 @@
             width: 100%;
             display: flex;
             justify-content: space-around;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
 
         .timer-info {
             font-weight: bold;
-            font-size: 30px;
+            font-size: 24px;
         }
 
         .timer-countdown {
             color: red;
-            font-size: 45px;
+            font-size: 35px;
             font-family: monospace;
             display: block;
         }
 
         /* Ô trạng thái đáp án */
         #answerStatusBox {
-            width: 95%;
+            width: 900px;
+            height: 40px;
             background: orange;
             color: white;
             font-weight: bold;
             text-align: center;
             padding: 10px;
             border-radius: 5px;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
             display: none;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            min-height: 20px;
+            box-sizing: border-box;
         }
 
-        /* Hàng nhập đáp án: Input + Nút gửi nằm ngang */
+        /* --- UI UPDATE: Chỉnh Pixel theo yêu cầu --- */
         .input-row {
             display: flex;
-            width: 95%;
+            justify-content: center;
+            align-items: center;
             gap: 5px;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
 
         #answer {
-            flex: 3;
-            height: 45px;
+            width: 800px; 
+            height: 60px; 
+            font-size: 22px;
             margin: 0;
             box-sizing: border-box;
             text-align: center;
+            flex: none; 
         }
 
         #btnSend {
-            flex: 1;
+            width: 100px; 
+            height: 60px; 
             background: yellow;
             color: black;
-            height: 45px;
+            font-size: 20px;
             margin: 0;
             cursor: pointer;
             box-sizing: border-box;
             white-space: nowrap;
+            /* Bỏ flex để nhận width cố định */
+            flex: none;
         }
 
         #btnSend:hover {
@@ -112,16 +119,16 @@
             color: white
         }
 
-        /* Nút Chuông */
         #btnBuzz {
-            width: 95%;
+            width: 905px; 
             height: 80px;
             background: blue;
             color: white;
-            font-size: 24px;
-            margin-top: 5px;
+            font-size: 20px;
+            margin-top: 10px;
             cursor: pointer;
             border: none;
+            box-shadow: 0 4px #00008b;
         }
 
         #btnBuzz:hover {
@@ -130,7 +137,7 @@
 
         #btnBuzz:active {
             box-shadow: 0 2px #00008b;
-            transform: translateY(2px);
+            transform: translateY(4px);
         }
 
         /* Trạng thái khóa */
@@ -149,13 +156,13 @@
 
         /* BẢNG THỨ TỰ BẤM CHUÔNG */
         h3 {
-            margin-top: 20px;
-            margin-bottom: 5px;
+            margin-top: 25px;
+            margin-bottom: 10px;
             color: #333;
         }
 
         table {
-            width: 95%;
+            width: 900px; /* Khớp với các nút trên */
             border-collapse: collapse;
             margin-top: 5px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
@@ -334,7 +341,7 @@
             return (diff / 1000).toFixed(3) + "s";
         }
 
-        // --- UI UPDATES (SỬA ĐỔI ĐỂ TỰ ĐỘNG FOCUS) ---
+        // --- UI UPDATES ---
         function updateAnswerUI(isLocked) {
             lockedAnswer = isLocked;
             btnSend.disabled = isLocked;
@@ -347,23 +354,15 @@
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
-
-                // 1. Tự động focus ngay khi mở (Delay nhỏ để UI kịp render)
                 setTimeout(() => { answerInput.focus(); }, 10);
-
-                // 2. Logic "Sticky Focus": Nếu mất focus (blur), tự kéo lại sau 100ms
-                // Thời gian chờ 100ms là để sự kiện click vào nút (Send/Buzz) kịp xảy ra trước khi focus bị kéo đi.
                 answerInput.onblur = (e) => {
                     if (!lockedAnswer) {
-                        setTimeout(() => {
-                            answerInput.focus();
-                        }, 100);
+                        setTimeout(() => { answerInput.focus(); }, 100);
                     }
                 };
             }
         }
 
-        // Vẫn giữ global click listener để chắc chắn
         document.addEventListener('click', (e) => {
             if (!lockedAnswer && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
                 answerInput.focus();
@@ -420,17 +419,14 @@
             const { data } = await supabase.from('buzzes').select('*').eq('room_code', myRoom);
             if (data) {
                 buzzOrder = data;
-
-                // --- BỔ SUNG: Kiểm tra xem mình đã có trong danh sách chưa ---
                 const amIBuzzed = data.some(b => b.name === myName);
                 if (amIBuzzed) {
-                    if (!hasBuzzed) { // Chỉ cập nhật nếu trạng thái hiện tại chưa khóa
+                    if (!hasBuzzed) {
                         hasBuzzed = true;
                         updateBuzzUI(lockedBuzz);
                         showPopup("Đã bấm chuông!");
                     }
                 }
-
                 renderBuzzTable();
             }
         }
@@ -494,9 +490,23 @@
 
             const code = parseInt(codeString);
 
+            // 1. Kiểm tra phòng
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
+            // 2. Validate Trùng tên
+            const { data: existingUser } = await supabase
+                .from('participants')
+                .select('id')
+                .eq('room_code', code)
+                .eq('name', name)
+                .maybeSingle();
+
+            if (existingUser) {
+                return showPopup("Tên này đã có người dùng trong phòng!", "error");
+            }
+
+            // 3. Insert Participant
             const { error: insertError } = await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
@@ -504,12 +514,7 @@
             }]);
 
             if (insertError) {
-                if (insertError.code === '23505' || insertError.message.includes('duplicate')) {
-                    const { data: existing } = await supabase.from('participants').select('role').eq('room_code', code).eq('name', name).single();
-                    if (!existing || existing.role !== 'contestant') return showPopup("Tên đã được sử dụng bởi Host/Manager!", "error");
-                } else {
-                    return showPopup("Lỗi tham gia: " + insertError.message, "error");
-                }
+                return showPopup("Lỗi tham gia: " + insertError.message, "error");
             }
 
             myRoom = code;
@@ -530,7 +535,6 @@
             if (lockedAnswer) return showPopup("Đang khóa!", "error");
             const text = answerInput.value.trim();
             if (!text) {
-                // Kể cả lỗi cũng phải focus lại
                 answerInput.focus();
                 return showPopup("Chưa nhập đáp án!", "error");
             }
@@ -555,16 +559,11 @@
                 showPopup("Lỗi gửi: " + error.message, "error");
                 btnSend.disabled = false;
             }
-
-            // --- QUAN TRỌNG: Focus lại ô input sau khi bấm gửi ---
             answerInput.focus();
         };
 
         btnBuzz.onclick = async () => {
-            // Dù chuông có khóa hay không, thí sinh vẫn muốn tiếp tục gõ
-            // Nhưng ta sẽ xử lý logic bấm chuông trước
             if (lockedBuzz || hasBuzzed) {
-                // Kể cả ko bấm đc chuông, vẫn trả focus về
                 answerInput.focus();
                 return;
             }
@@ -587,8 +586,6 @@
             } else {
                 showPopup("Đã bấm chuông!", "success");
             }
-
-            // --- QUAN TRỌNG: Focus lại ô input sau khi bấm chuông ---
             answerInput.focus();
         };
 
@@ -616,7 +613,6 @@
                         renderBuzzTable();
                         updateBuzzUI(lockedBuzz);
                         showPopup("Host đã reset chuông!");
-                        // Reset chuông xong cũng tiện tay focus lại input cho user
                         if (!lockedAnswer) answerInput.focus();
                     })
                 .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'participants', filter: `room_code=eq.${myRoom}` },
@@ -636,7 +632,6 @@
         async function handleRoomUpdate(roomData) {
             if (!roomData) return;
 
-            // --- XỬ LÝ ĐÁP ÁN ---
             currentAnswerStartTime = roomData.answer_open_time ? new Date(roomData.answer_open_time).getTime() : 0;
             if (roomData.answer_status === 'pending_open') {
                 resetAnswerStatusBox();
@@ -648,7 +643,6 @@
                     answer_open_time: start_time_iso
                 }).eq('room_code', myRoom);
 
-                // Mở UI -> Hàm này sẽ tự gọi answerInput.focus()
                 updateAnswerUI(false);
                 startTimer('answerCountdown', start_time_iso, roomData.answer_duration, () => updateAnswerUI(true));
                 await fetchMyLastAnswer();
@@ -665,7 +659,6 @@
                 answerStatusBox.innerText = "";
             }
 
-            // --- XỬ LÝ CHUÔNG ---
             currentBuzzStartTime = roomData.buzz_open_time ? new Date(roomData.buzz_open_time).getTime() : 0;
             await fetchBuzzList();
 
