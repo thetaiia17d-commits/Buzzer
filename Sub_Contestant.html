@@ -486,7 +486,7 @@
         btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
-      // Lấy input position (kiểm tra id="positionInput" tồn tại)
+      
       const posInput = document.getElementById("positionInput");
       const posString = posInput ? posInput.value.trim() : "";
 
@@ -523,16 +523,21 @@
         // Mã lỗi '23505' là lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL
         if (insertError.code === '23505') {
             
-            // TRƯỜNG HỢP 1: Lỗi trùng Vị trí ("participants_position_key")
-            // Ràng buộc này là UNIQUE(room_code, position)
+            // TRƯỜNG HỢP 1: Lỗi trùng Vị trí (participants_position_key)
+            // Lỗi này xảy ra khi (room_code, position) bị trùng
             if (errorMessage.includes('participants_position_key')) {
-                // Lỗi chỉ xảy ra khi người dùng cố tình nhập positionVal bị trùng
-                return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
+                // Ta chỉ báo lỗi vị trí khi người dùng cố tình nhập vị trí (positionVal có giá trị)
+                if (positionVal !== null) {
+                    return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
+                }
+                // Nếu người dùng không nhập vị trí (positionVal là NULL) mà vẫn báo lỗi trùng vị trí
+                // thì có thể DB của bạn có Rule Policy không cho phép NULL, hoặc lỗi logic trigger trong DB.
+                // Ta sẽ hiển thị lỗi chung nhưng vẫn ưu tiên xử lý Re-join ở dưới.
             }
             
             // TRƯỜNG HỢP 2: Lỗi trùng Tên (Primary Key: room_code + name)
-            // Nếu không phải lỗi vị trí, ta giả định là lỗi Primary Key (Trùng tên)
-            if (errorMessage.includes('participants_pkey') || errorMessage.includes('room_code_name_pkey')) {
+            // Lỗi này xảy ra khi (room_code, name) bị trùng
+            if (errorMessage.includes('participants_pkey') || errorMessage.includes('room_code_name_pkey') || !errorMessage.includes('participants_position_key')) {
                 
                 // Kiểm tra người dùng này có phải là Contestant cũ không
                 const { data: existingUser } = await supabase
@@ -540,16 +545,16 @@
                     .select('role')
                     .eq('room_code', code)
                     .eq('name', name)
-                    .maybeSingle(); // Dùng maybeSingle vì có thể người dùng đã bị xóa ngay trước đó.
+                    .maybeSingle(); 
 
                 if (existingUser && existingUser.role === 'contestant') {
                     showPopup("Chào mừng bạn quay lại!");
-                    // Không return, để code chạy xuống phần setup giao diện game (Re-join thành công)
+                    // Chạy xuống dưới để setup giao diện game (Re-join thành công)
                 } else if (existingUser && existingUser.role === 'host') {
                     return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
                 } else {
-                    // Trường hợp này hiếm, thường do lỗi Race Condition, nhưng ta vẫn nên hiển thị lỗi chung.
-                    return showPopup("Lỗi tham gia do Tên đã tồn tại. Vui lòng thử lại với tên khác.", "error");
+                    // Xử lý khi Primary Key bị trùng nhưng lại không tìm thấy user ngay sau đó
+                    return showPopup("Lỗi hệ thống hoặc tên bị trùng. Vui lòng thử lại.", "error");
                 }
             } else { 
                 // Lỗi 23505 khác không phải lỗi tên hay vị trí đã biết
@@ -557,7 +562,7 @@
             }
         
         } else {
-            // Các lỗi không phải UNIQUE CONSTRAINT (Network, Foreign Key...)
+            // Các lỗi không phải UNIQUE CONSTRAINT
             return showPopup("Lỗi tham gia: " + insertError.message, "error");
         }
       } else {
@@ -570,7 +575,7 @@
 
       // Ẩn hiện giao diện
       if (typeof loginArea !== 'undefined') loginArea.style.display = 'none'; 
-      gameArea.style.display = "flex";
+      if (typeof gameArea !== 'undefined') gameArea.style.display = "flex";
       
       // Disable các input
       if (roomCodeInput) roomCodeInput.disabled = true;
