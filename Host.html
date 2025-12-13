@@ -632,7 +632,7 @@
       if (!tblAnswersBody) return;
       tblAnswersBody.innerHTML = "";
       const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
-      
+
       const latestAnswersMap = new Map();
       answers.forEach(item => {
         const existing = latestAnswersMap.get(item.name);
@@ -651,18 +651,18 @@
         allParticipants.forEach(p => posMap[p.name] = p.position);
 
         displayData.sort((a, b) => {
-            const posA = posMap[a.name];
-            const posB = posMap[b.name];
+          const posA = posMap[a.name];
+          const posB = posMap[b.name];
 
-            // Nếu cả 2 đều có vị trí -> Xếp tăng dần
-            if (posA != null && posB != null) return posA - posB;
-            // Nếu A có, B không -> A lên trước
-            if (posA != null && posB == null) return -1;
-            // Nếu B có, A không -> B lên trước
-            if (posA == null && posB != null) return 1;
-            
-            // Nếu cả 2 không có vị trí -> Xếp theo tên hoặc thời gian vào (ở đây fallback về tên cho ổn định)
-            return a.name.localeCompare(b.name);
+          // Nếu cả 2 đều có vị trí -> Xếp tăng dần
+          if (posA != null && posB != null) return posA - posB;
+          // Nếu A có, B không -> A lên trước
+          if (posA != null && posB == null) return -1;
+          // Nếu B có, A không -> B lên trước
+          if (posA == null && posB != null) return 1;
+
+          // SỬA LỖI: Nếu cả 2 không có vị trí -> Xếp theo thời gian đáp án (created_at)
+          return new Date(a.created_at) - new Date(b.created_at);
         });
       } else {
         // Sort option = join
@@ -680,13 +680,9 @@
 
       displayData.forEach(item => {
         const row = tblAnswersBody.insertRow();
-        
-        // Hiển thị thêm vị trí nếu có để dễ theo dõi (Optional, nhưng hữu ích)
+
+        // ĐÃ SỬA: Bỏ hiển thị vị trí, chỉ giữ lại tên thí sinh.
         let displayName = item.name;
-        const pInfo = allParticipants.find(p => p.name === item.name);
-        if(pInfo && pInfo.position) {
-            displayName = `(#${pInfo.position}) ${item.name}`; 
-        }
 
         row.insertCell().innerText = displayName;
         row.insertCell().innerText = item.answer_text;
@@ -741,18 +737,18 @@
 
         // 2. Nếu là thí sinh (Role == 3), xét logic Position
         if (prioA === 3) {
-            const posA = a.position;
-            const posB = b.position;
+          const posA = a.position;
+          const posB = b.position;
 
-            // Nếu cả 2 có position -> tăng dần
-            if (posA != null && posB != null) return posA - posB;
-            // A có, B không -> A trước
-            if (posA != null && posB == null) return -1;
-            // B có, A không -> B trước
-            if (posA == null && posB != null) return 1;
-            
-            // Cả 2 không có -> Xếp theo thời gian vào (created_at)
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          // Nếu cả 2 có position -> tăng dần
+          if (posA != null && posB != null) return posA - posB;
+          // A có, B không -> A trước
+          if (posA != null && posB == null) return -1;
+          // B có, A không -> B trước
+          if (posA == null && posB != null) return 1;
+
+          // Cả 2 không có -> Xếp theo thời gian vào (created_at)
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         }
 
         // Các role khác xếp theo thời gian
@@ -763,7 +759,7 @@
         const li = document.createElement("li");
         let nameHtml = "";
         let roleSpan = "";
-        
+
         // Hiển thị Position bên cạnh tên nếu có
         let posDisplay = (u.role === 'contestant' && u.position) ? `(#${u.position}) ` : "";
 
@@ -1502,6 +1498,9 @@
 
     window.addEventListener("beforeunload", () => { leaveRoom(); });
 
+    document.addEventListener("contextmenu", function (e) {
+      e.preventDefault();
+    });
   </script>
 </body>
 

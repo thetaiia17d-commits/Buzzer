@@ -16,7 +16,7 @@
             margin-bottom: 20px;
             padding: 10px;
             background: yellow;
-            color:green;
+            color: green;
             text-align: center;
             border-radius: 5px;
         }
@@ -56,7 +56,8 @@
         #sortOptions label,
         #displayOptions label {
             cursor: pointer;
-            display: flex; /* Dùng flexbox để căn chỉnh ô tròn và chữ */
+            display: flex;
+            /* Dùng flexbox để căn chỉnh ô tròn và chữ */
             align-items: center;
             gap: 5px;
         }
@@ -69,17 +70,19 @@
             margin: 0;
             position: relative;
             /* Tùy chỉnh kích thước và hình dạng ô tròn */
-            width: 16px; 
+            width: 16px;
             height: 16px;
             border-radius: 50%;
-            border: 2px solid #ff00cc; /* Border mặc định khi KHÔNG được chọn */
+            border: 2px solid #ff00cc;
+            /* Border mặc định khi KHÔNG được chọn */
             outline: none;
             transition: border 0.2s ease-in-out;
         }
 
         /* Tạo hình tròn bên trong khi được chọn */
         input[type="radio"]:checked {
-            border: 2px solid orange; /* Border khi ĐƯỢC chọn là màu orange */
+            border: 2px solid orange;
+            /* Border khi ĐƯỢC chọn là màu orange */
         }
 
         /* Hình tròn bên trong (màu blue) */
@@ -88,7 +91,8 @@
             display: block;
             width: 8px;
             height: 8px;
-            background-color: blue; /* Màu hình tròn trong là blue */
+            background-color: blue;
+            /* Màu hình tròn trong là blue */
             border-radius: 50%;
             position: absolute;
             top: 50%;
@@ -96,6 +100,7 @@
             transform: translate(-50%, -50%);
             transition: background-color 0.2s ease-in-out;
         }
+
         /* --- KẾT THÚC CSS TÙY CHỈNH --- */
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -118,7 +123,7 @@
             <input type="radio" name="sortOption" value="time" checked onchange="render()"> Theo thời gian trả lời
         </label>
     </div>
-    
+
     <div id="displayOptions">
         <label>
             <input type="radio" name="displayTime" value="show" checked onchange="render()"> Hiện thời gian
@@ -127,7 +132,7 @@
             <input type="radio" name="displayTime" value="hide" onchange="render()"> Ẩn thời gian
         </label>
     </div>
-    
+
     <div id="resultsContainer">Đang tải...</div>
 
     <script>
@@ -149,7 +154,7 @@
             // BỔ SUNG: select thêm 'position'
             const { data } = await supabase
                 .from('participants')
-                .select('name, created_at, position') 
+                .select('name, created_at, position')
                 .eq('room_code', roomCode)
                 .order('created_at', { ascending: true });
 
@@ -181,14 +186,14 @@
                 console.error("Lỗi lấy đáp án:", error.message);
                 return;
             }
-            
+
             answers = data || [];
             render();
         }
 
         function render() {
             resultsContainer.innerHTML = '';
-            
+
             if (answers.length === 0) {
                 resultsContainer.innerHTML = '<p style="text-align:center">Chưa có dữ liệu</p>';
                 return;
@@ -254,7 +259,7 @@
                 // Lấy vị trí để hiển thị kèm (nếu muốn)
                 let pPos = "";
                 const pInfo = allParticipants.find(p => p.name === item.name);
-                if(pInfo && pInfo.position) pPos = `(#${pInfo.position}) `;
+                if (pInfo && pInfo.position) pPos = `(#${pInfo.position}) `;
 
                 let content = `${pPos}${item.name} | ${answerText}`;
                 if (displayTimeOption === 'show') {
@@ -280,8 +285,8 @@
 
             supabase.channel('answers_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${roomCode}` },
-                    () => { 
-                        fetchAndRender(); 
+                    () => {
+                        fetchAndRender();
                     })
                 .subscribe();
 
@@ -290,20 +295,24 @@
                     (payload) => {
                         if ('answer_open_time' in payload.new) {
                             roomStartTime = payload.new.answer_open_time ? new Date(payload.new.answer_open_time).getTime() : 0;
-                            fetchAndRender(); 
+                            fetchAndRender();
                         }
                     })
                 .subscribe();
 
             supabase.channel('participants_channel')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${roomCode}` },
-                    () => { 
-                        fetchParticipants().then(render); 
+                    () => {
+                        fetchParticipants().then(render);
                     })
                 .subscribe();
         }
 
         init();
+
+        document.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+        });
     </script>
 </body>
 
