@@ -333,15 +333,22 @@
       }]);
 
       if (insertError) {
-        // LUÔN LUÔN in lỗi ra console để debug.
         console.error("Chi tiết lỗi:", insertError); 
 
-        // Mã lỗi '23505' là mã lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL (Supabase)
+        // Mã lỗi '23505' là mã lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL
         if (insertError.code === '23505') {
+            const errorMessage = insertError.message || "";
             
-            // Trường hợp 1: Trùng Tên (Primary Key: room_code + name)
-            // Kiểm tra lỗi trùng Primary Key (thường là 'participants_pkey')
-            if (insertError.message.includes('participants_pkey') || insertError.message.includes('room_code_name_pkey')) {
+            // TRƯỜNG HỢP 1: Lỗi trùng Vị trí
+            // KIỂM TRA CHÍNH XÁC tên constraint mà bạn báo lỗi.
+            if (errorMessage.includes('participants_position_key')) {
+                // Lỗi chỉ xảy ra khi positionVal != NULL và bị trùng
+                return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
+            }
+            
+            // TRƯỜNG HỢP 2: Lỗi trùng Tên (Primary Key: room_code + name)
+            // Nếu không phải lỗi vị trí, ta giả định là lỗi Primary Key (Trùng tên).
+            if (errorMessage.includes('participants_pkey') || errorMessage.includes('room_code_name_pkey') || !errorMessage.includes('participants_position_key')) {
                 
                 const { data: existingUser } = await supabase
                     .from('participants')
@@ -352,24 +359,17 @@
 
                 if (existingUser && existingUser.role === 'contestant') {
                     showPopup("Chào mừng bạn quay lại!");
-                    // Không return, để code chạy xuống dưới vào phòng.
+                    // Không return, để chạy xuống phần setup giao diện game
                 } else {
                     return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
                 }
-            
-            // Trường hợp 2: Trùng Vị trí (Unique Key: room_code + position)
-            // Nếu người dùng có nhập vị trí (positionVal !== null) VÀ lỗi là UNIQUE CONSTRAINT,
-            // thì gần như chắc chắn là lỗi trùng vị trí.
-            } else if (positionVal !== null) { 
-                return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng này. Vui lòng chọn số khác!`, "error");
-            
-            // Trường hợp 3: Lỗi UNIQUE CONSTRAINT KHÁC
             } else { 
-                return showPopup("Lỗi tham gia do dữ liệu bị trùng lặp (UNIQUE CONSTRAINT). Vui lòng kiểm tra lại Room Code/Tên.", "error");
+                // Lỗi 23505 khác
+                return showPopup("Lỗi tham gia do dữ liệu bị trùng lặp không xác định.", "error");
             }
         
         } else {
-            // Các lỗi không phải UNIQUE CONSTRAINT (ví dụ: Network, Foreign Key...)
+            // Các lỗi không phải UNIQUE CONSTRAINT
             return showPopup("Lỗi tham gia: " + insertError.message, "error");
         }
       } else {
