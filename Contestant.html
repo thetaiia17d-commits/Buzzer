@@ -325,66 +325,61 @@
       const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-      // 3. Thực hiện Insert
-      const { error: insertError } = await supabase.from('participants').insert([{
+      
+      // 3. KIỂM TRA TÊN CÓ BỊ HOST CHIẾM DỤNG KHÔNG (Pre-check)
+      // Nếu tên trùng, ta cần biết người đó là Host hay Contestant cũ.
+      const { data: existingUser, error: fetchError } = await supabase
+          .from('participants')
+          .select('role')
+          .eq('room_code', code) // Kiểm tra trong PHÒNG hiện tại
+          .eq('name', name)
+          .maybeSingle(); 
+
+      if (fetchError) {
+          console.error("Lỗi kiểm tra người dùng:", fetchError);
+          return showPopup("Lỗi hệ thống khi kiểm tra tên người dùng.", "error");
+      }
+
+      if (existingUser && existingUser.role === 'host') {
+          // Nếu tên đã được host sử dụng trong phòng này, chặn tham gia
+          return showPopup("Tên này đã được Ban tổ chức sử dụng trong phòng này. Vui lòng chọn tên khác!", "error");
+      }
+      
+      // 4. Thực hiện UPSERT (Insert bản ghi mới HOẶC Update bản ghi Contestant cũ)
+      const { error: upsertError } = await supabase.from('participants').upsert([{
         room_code: code,
         name: name,
         role: 'contestant',
-        position: positionVal // Lưu vị trí vào DB (có thể là NULL)
-      }]);
+        position: positionVal
+      }], { onConflict: 'room_code,name' }); // Conflict trên Primary Key -> tự động Update
 
-      if (insertError) {
-        console.error("Chi tiết lỗi:", insertError); 
-        const errorMessage = insertError.message || "";
+      if (upsertError) {
+        console.error("Chi tiết lỗi Upsert:", upsertError); 
+        const errorMessage = upsertError.message || "";
+        const errorCode = upsertError.code;
 
         // Mã lỗi '23505' là lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL
-        if (insertError.code === '23505') {
+        if (errorCode === '23505') {
             
-            // TRƯỜNG HỢP 1: Lỗi trùng Vị trí (participants_position_key)
-            // Lỗi này xảy ra khi (room_code, position) bị trùng
+            // Lỗi trùng Vị trí là lỗi UNIQUE duy nhất còn lại cần xử lý thủ công
             if (errorMessage.includes('participants_position_key')) {
-                // Ta chỉ báo lỗi vị trí khi người dùng cố tình nhập vị trí
-                if (positionVal !== null) {
-                    return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
-                }
-                // Nếu người dùng không nhập positionVal mà vẫn lỗi, thì là lỗi DB, ta có thể bỏ qua hoặc báo lỗi chung
+                return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
             }
             
-            // TRƯỜNG HỢP 2: Lỗi trùng Tên (Primary Key: room_code + name)
-            // Lỗi này xảy ra khi (room_code, name) bị trùng.
-            // Nếu không phải lỗi vị trí, ta giả định là lỗi Primary Key (Trùng tên) trong PHÒNG NÀY.
-            if (errorMessage.includes('participants_pkey') || errorMessage.includes('room_code_name_pkey') || !errorMessage.includes('participants_position_key')) {
-                
-                // Kiểm tra người dùng này có phải là Contestant cũ trong PHÒNG NÀY không
-                const { data: existingUser } = await supabase
-                    .from('participants')
-                    .select('role')
-                    .eq('room_code', code) // PHẢI DÙNG room_code để đảm bảo kiểm tra trong phạm vi phòng này
-                    .eq('name', name)
-                    .maybeSingle(); 
+            // Các lỗi 23505 khác (không mong muốn)
+            return showPopup(`Lỗi trùng lặp không xác định (Mã 23505): ${errorMessage}`, "error");
 
-                if (existingUser && existingUser.role === 'contestant') {
-                    // Nếu đã là thí sinh, cho phép re-join
-                    showPopup("Chào mừng bạn quay lại!");
-                    // Chạy xuống dưới để setup giao diện game (Re-join thành công)
-                } else if (existingUser && existingUser.role === 'host') {
-                    // Nếu là host, báo lỗi
-                    return showPopup("Tên này đã được Ban tổ chức sử dụng trong phòng này!", "error");
-                } else {
-                    // Lỗi lạ, trùng key mà không tìm thấy user, có thể do RLS hoặc race condition
-                    return showPopup("Lỗi tham gia do Tên đã tồn tại trong phòng này. Vui lòng thử lại.", "error");
-                }
-            } else { 
-                // Lỗi 23505 khác không phải lỗi tên hay vị trí đã biết
-                return showPopup("Lỗi tham gia do dữ liệu bị trùng lặp không xác định.", "error");
-            }
-        
         } else {
-            // Các lỗi không phải UNIQUE CONSTRAINT
-            return showPopup("Lỗi tham gia: " + insertError.message, "error");
+            // Các lỗi khác (Network, Foreign Key...)
+            return showPopup("Lỗi tham gia: " + upsertError.message, "error");
         }
       } else {
-        showPopup("Đã vào phòng " + code);
+        // UPSERT thành công (Insert mới HOẶC Re-join thành công)
+        if (existingUser) {
+            showPopup("Chào mừng bạn quay lại!");
+        } else {
+            showPopup("Đã vào phòng " + code);
+        }
       }
       
       // --- Logic khi vào phòng thành công (hoặc Re-join thành công) ---
