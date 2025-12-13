@@ -632,7 +632,7 @@
       if (!tblAnswersBody) return;
       tblAnswersBody.innerHTML = "";
       const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
-
+      
       const latestAnswersMap = new Map();
       answers.forEach(item => {
         const existing = latestAnswersMap.get(item.name);
@@ -651,18 +651,18 @@
         allParticipants.forEach(p => posMap[p.name] = p.position);
 
         displayData.sort((a, b) => {
-          const posA = posMap[a.name];
-          const posB = posMap[b.name];
+            const posA = posMap[a.name];
+            const posB = posMap[b.name];
 
-          // Nếu cả 2 đều có vị trí -> Xếp tăng dần
-          if (posA != null && posB != null) return posA - posB;
-          // Nếu A có, B không -> A lên trước
-          if (posA != null && posB == null) return -1;
-          // Nếu B có, A không -> B lên trước
-          if (posA == null && posB != null) return 1;
-
-          // Nếu cả 2 không có vị trí -> Xếp theo tên hoặc thời gian vào (ở đây fallback về tên cho ổn định)
-          return a.name.localeCompare(b.name);
+            // Nếu cả 2 đều có vị trí -> Xếp tăng dần
+            if (posA != null && posB != null) return posA - posB;
+            // Nếu A có, B không -> A lên trước
+            if (posA != null && posB == null) return -1;
+            // Nếu B có, A không -> B lên trước
+            if (posA == null && posB != null) return 1;
+            
+            // Nếu cả 2 không có vị trí -> Xếp theo tên hoặc thời gian vào (ở đây fallback về tên cho ổn định)
+            return a.name.localeCompare(b.name);
         });
       } else {
         // Sort option = join
@@ -680,9 +680,13 @@
 
       displayData.forEach(item => {
         const row = tblAnswersBody.insertRow();
-
-        // [KHU VỰC ĐÃ SỬA] - Chỉ hiển thị tên thí sinh, bỏ vị trí đứng
+        
+        // Hiển thị thêm vị trí nếu có để dễ theo dõi (Optional, nhưng hữu ích)
         let displayName = item.name;
+        const pInfo = allParticipants.find(p => p.name === item.name);
+        if(pInfo && pInfo.position) {
+            displayName = `(#${pInfo.position}) ${item.name}`; 
+        }
 
         row.insertCell().innerText = displayName;
         row.insertCell().innerText = item.answer_text;
