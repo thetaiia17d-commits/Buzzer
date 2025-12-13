@@ -497,7 +497,7 @@
       const code = parseInt(codeString);
       let positionVal = null;
 
-      // Validate Position
+      // Validate Position (nếu có nhập)
       if (posString) {
         positionVal = parseInt(posString);
         if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
@@ -510,32 +510,19 @@
       if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
       
-      // 3. KIỂM TRA TÊN CÓ BỊ HOST CHIẾM DỤNG KHÔNG (Pre-check)
-      // Nếu tên trùng, ta cần biết người đó là Host hay Contestant cũ.
-      const { data: existingUser, error: fetchError } = await supabase
+      // 3. Thực hiện UPSERT: Insert bản ghi mới HOẶC Update bản ghi Contestant cũ
+      const { data: existingUser, error: upsertError } = await supabase
           .from('participants')
-          .select('role')
-          .eq('room_code', code) // Kiểm tra trong PHÒNG hiện tại
-          .eq('name', name)
-          .maybeSingle(); 
-
-      if (fetchError) {
-          console.error("Lỗi kiểm tra người dùng:", fetchError);
-          return showPopup("Lỗi hệ thống khi kiểm tra tên người dùng.", "error");
-      }
-
-      if (existingUser && existingUser.role === 'host') {
-          // Nếu tên đã được host sử dụng trong phòng này, chặn tham gia
-          return showPopup("Tên này đã được Ban tổ chức sử dụng trong phòng này. Vui lòng chọn tên khác!", "error");
-      }
-      
-      // 4. Thực hiện UPSERT (Insert bản ghi mới HOẶC Update bản ghi Contestant cũ)
-      const { error: upsertError } = await supabase.from('participants').upsert([{
-        room_code: code,
-        name: name,
-        role: 'contestant',
-        position: positionVal
-      }], { onConflict: 'room_code,name' }); // Conflict trên Primary Key -> tự động Update
+          .upsert([{
+              room_code: code,
+              name: name,
+              role: 'contestant',
+              position: positionVal
+          }], { 
+              onConflict: 'room_code,name' // Dựa vào UNIQUE CONSTRAINT mới tạo
+          })
+          .select('role') // Lấy vai trò (role) của bản ghi vừa được xử lý
+          .maybeSingle(); // Lấy bản ghi (hoặc null nếu insert)
 
       if (upsertError) {
         console.error("Chi tiết lỗi Upsert:", upsertError); 
@@ -545,12 +532,17 @@
         // Mã lỗi '23505' là lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL
         if (errorCode === '23505') {
             
-            // Lỗi trùng Vị trí là lỗi UNIQUE duy nhất còn lại cần xử lý thủ công
+            // Lỗi trùng Vị trí (participants_position_key)
             if (errorMessage.includes('participants_position_key')) {
                 return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
             }
             
-            // Các lỗi 23505 khác (không mong muốn)
+            // Lỗi trùng tên Host (rất khó xảy ra với logic UPSERT, nhưng giữ lại)
+            if (existingUser && existingUser.role === 'host') {
+                return showPopup("Tên này đã được Ban tổ chức sử dụng trong phòng này. Vui lòng chọn tên khác!", "error");
+            }
+            
+            // Các lỗi 23505 khác
             return showPopup(`Lỗi trùng lặp không xác định (Mã 23505): ${errorMessage}`, "error");
 
         } else {
@@ -559,9 +551,14 @@
         }
       } else {
         // UPSERT thành công (Insert mới HOẶC Re-join thành công)
-        if (existingUser) {
+        if (existingUser && existingUser.role === 'contestant') { // Đã tồn tại và là Contestant
             showPopup("Chào mừng bạn quay lại!");
+        } else if (existingUser && existingUser.role === 'host') {
+            // Trường hợp này không nên xảy ra nếu RLS/Policies được cấu hình đúng. 
+            // Nếu xảy ra: Có nghĩa là Host đang cố gắng re-join như Contestant.
+            return showPopup("Lỗi: Bạn đã đăng nhập với vai trò Host! Vui lòng chọn tên khác.", "error");
         } else {
+             // Thường là Insert mới thành công
             showPopup("Đã vào phòng " + code);
         }
       }
