@@ -351,9 +351,6 @@
   <h2>Bảng kết quả đáp án:</h2>
 
   <div style="margin-bottom: 10px; font-weight: bold; color: black; display: flex; justify-content: center; gap: 30px;">
-    <label style="cursor: pointer; font-weight: bold;">
-      <input type="radio" name="sortOption" value="position" onchange="renderAnswers()"> Theo vị trí đứng
-    </label>
     <label style="cursor: pointer;">
       <input type="radio" name="sortOption" value="join" onchange="renderAnswers()"> Theo thứ tự vào phòng
     </label>
@@ -632,7 +629,6 @@
       if (!tblAnswersBody) return;
       tblAnswersBody.innerHTML = "";
       const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
-      
       const latestAnswersMap = new Map();
       answers.forEach(item => {
         const existing = latestAnswersMap.get(item.name);
@@ -644,28 +640,7 @@
 
       if (sortOption === "time") {
         displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      } else if (sortOption === "position") {
-        // BỔ SUNG: Sắp xếp theo Position
-        // Tạo map để tra cứu vị trí nhanh: Name -> Position
-        const posMap = {};
-        allParticipants.forEach(p => posMap[p.name] = p.position);
-
-        displayData.sort((a, b) => {
-            const posA = posMap[a.name];
-            const posB = posMap[b.name];
-
-            // Nếu cả 2 đều có vị trí -> Xếp tăng dần
-            if (posA != null && posB != null) return posA - posB;
-            // Nếu A có, B không -> A lên trước
-            if (posA != null && posB == null) return -1;
-            // Nếu B có, A không -> B lên trước
-            if (posA == null && posB != null) return 1;
-            
-            // Nếu cả 2 không có vị trí -> Xếp theo tên hoặc thời gian vào (ở đây fallback về tên cho ổn định)
-            return a.name.localeCompare(b.name);
-        });
       } else {
-        // Sort option = join
         const realParticipants = allParticipants.filter(p => !p.name.startsWith("SYNC_TIME_"));
         const uniqueNamesOrder = Array.from(new Set(realParticipants.map(p => p.name)));
 
@@ -680,15 +655,7 @@
 
       displayData.forEach(item => {
         const row = tblAnswersBody.insertRow();
-        
-        // Hiển thị thêm vị trí nếu có để dễ theo dõi (Optional, nhưng hữu ích)
-        let displayName = item.name;
-        const pInfo = allParticipants.find(p => p.name === item.name);
-        if(pInfo && pInfo.position) {
-            displayName = `(#${pInfo.position}) ${item.name}`; 
-        }
-
-        row.insertCell().innerText = displayName;
+        row.insertCell().innerText = item.name;
         row.insertCell().innerText = item.answer_text;
         row.insertCell().innerText = formatTimeDisplay(item.created_at, answerStartTime);
       });
@@ -720,6 +687,7 @@
 
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => {
+        // CŨ: if (u.name.startsWith("SYNC_TIME_")) return; -> XÓA DÒNG NÀY ĐỂ HIỆN SYNC
         if (!uniqueParticipantsMap.has(u.name)) {
           uniqueParticipantsMap.set(u.name, u);
         }
@@ -728,56 +696,46 @@
       let displayUsers = Array.from(uniqueParticipantsMap.values());
 
       displayUsers.sort((a, b) => {
-        // 1. Ưu tiên Role trước (Host > Manager > Thí sinh)
-        const getRolePriority = (user) => {
-          if (user.role === 'host') return 1;
-          if (user.role === 'manager') return 2;
-          if (user.name.startsWith("SYNC_")) return 4;
-          return 3;
+        // Hàm tính độ ưu tiên
+        const getPriority = (user) => {
+          if (user.role === 'host') return 1;     // Ưu tiên 1: Host
+          if (user.role === 'manager') return 2;  // Ưu tiên 2: Quản lý
+          if (user.name.startsWith("SYNC_")) return 4; // Ưu tiên 4: User hệ thống (xếp cuối)
+          return 3;                               // Ưu tiên 3: Thí sinh thường
         };
-        const prioA = getRolePriority(a);
-        const prioB = getRolePriority(b);
-        if (prioA !== prioB) return prioA - prioB;
 
-        // 2. Nếu là thí sinh (Role == 3), xét logic Position
-        if (prioA === 3) {
-            const posA = a.position;
-            const posB = b.position;
+        const prioA = getPriority(a);
+        const prioB = getPriority(b);
 
-            // Nếu cả 2 có position -> tăng dần
-            if (posA != null && posB != null) return posA - posB;
-            // A có, B không -> A trước
-            if (posA != null && posB == null) return -1;
-            // B có, A không -> B trước
-            if (posA == null && posB != null) return 1;
-            
-            // Cả 2 không có -> Xếp theo thời gian vào (created_at)
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        // Nếu khác cấp độ ưu tiên thì xếp theo cấp độ
+        if (prioA !== prioB) {
+          return prioA - prioB;
         }
-
-        // Các role khác xếp theo thời gian
+        // Nếu cùng cấp độ thì xếp theo thời gian vào phòng
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
       displayUsers.forEach(u => {
         const li = document.createElement("li");
+
         let nameHtml = "";
         let roleSpan = "";
-        
-        // Hiển thị Position bên cạnh tên nếu có
-        let posDisplay = (u.role === 'contestant' && u.position) ? `(#${u.position}) ` : "";
 
         if (u.role === 'host') {
+          // Host: Tên xanh lá, Role xanh lá
           nameHtml = `<b style="color: green;">${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: green; margin-left: 5px;">(Host)</span>';
         } else if (u.role === 'manager') {
+          // Manager: Tên xanh dương, Role xanh dương
           nameHtml = `<b style="color: blue;">${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: blue; margin-left: 5px;">(Quản lý)</span>';
         } else if (u.name.startsWith("SYNC_")) {
+          // SYNC: Tên tím, Role tím
           nameHtml = `<b style="color: purple;">${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: purple; margin-left: 5px;">(System)</span>';
         } else {
-          nameHtml = `<b style="color: red;">${posDisplay}${u.name}</b>`;
+          // Thí sinh: Tên đen, Role đen
+          nameHtml = `<b style="color: red;">${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: red; margin-left: 5px;">(Thí sinh)</span>';
         }
 

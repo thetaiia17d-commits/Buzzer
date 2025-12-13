@@ -230,7 +230,6 @@
         <h1>Thí sinh</h1>
         <input id="roomCode" placeholder="Mã phòng (6 số)" type="number">
         <input id="name" placeholder="Tên của bạn">
-        <input id="positionInput" type="number" placeholder="Vị trí đứng (1-100, Optional)" min="1" max="100" style="width: 250px; font-weight: bold;">
         <button id="btnJoin">Xác nhận vào phòng</button>
     </div>
 
@@ -484,109 +483,53 @@
 
         // --- MAIN ACTIONS ---
         btnJoin.onclick = async () => {
-      const codeString = roomCodeInput.value.trim();
-      const name = nameInput.value.trim();
-      
-      const posInput = document.getElementById("positionInput");
-      const posString = posInput ? posInput.value.trim() : "";
+            const codeString = roomCodeInput.value.trim();
+            const name = nameInput.value.trim();
+            if (!codeString || !name || codeString.length !== 6)
+                return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
-      // 1. Validate Input
-      if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString)))
-        return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
+            const code = parseInt(codeString);
 
-      const code = parseInt(codeString);
-      let positionVal = null;
+            // 1. Kiểm tra phòng
+            const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
+            if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-      // Validate Position (nếu có nhập)
-      if (posString) {
-        positionVal = parseInt(posString);
-        if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
-          return showPopup("Vị trí phải từ 1 đến 100", "error");
-        }
-      }
-      
-      // 2. Kiểm tra phòng tồn tại
-      const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
-      if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
+            // 2. Validate Trùng tên
+            const { data: existingUser } = await supabase
+                .from('participants')
+                .select('id')
+                .eq('room_code', code)
+                .eq('name', name)
+                .maybeSingle();
 
-      
-      // 3. Thực hiện UPSERT: Insert bản ghi mới HOẶC Update bản ghi Contestant cũ
-      const { data: existingUser, error: upsertError } = await supabase
-          .from('participants')
-          .upsert([{
-              room_code: code,
-              name: name,
-              role: 'contestant',
-              position: positionVal
-          }], { 
-              onConflict: 'room_code,name' // Dựa vào UNIQUE CONSTRAINT mới tạo
-          })
-          .select('role') // Lấy vai trò (role) của bản ghi vừa được xử lý
-          .maybeSingle(); // Lấy bản ghi (hoặc null nếu insert)
-
-      if (upsertError) {
-        console.error("Chi tiết lỗi Upsert:", upsertError); 
-        const errorMessage = upsertError.message || "";
-        const errorCode = upsertError.code;
-
-        // Mã lỗi '23505' là lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL
-        if (errorCode === '23505') {
-            
-            // Lỗi trùng Vị trí (participants_position_key)
-            if (errorMessage.includes('participants_position_key')) {
-                return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
+            if (existingUser) {
+                return showPopup("Tên này đã có người dùng trong phòng!", "error");
             }
-            
-            // Lỗi trùng tên Host (rất khó xảy ra với logic UPSERT, nhưng giữ lại)
-            if (existingUser && existingUser.role === 'host') {
-                return showPopup("Tên này đã được Ban tổ chức sử dụng trong phòng này. Vui lòng chọn tên khác!", "error");
+
+            // 3. Insert Participant
+            const { error: insertError } = await supabase.from('participants').insert([{
+                room_code: code,
+                name: name,
+                role: 'contestant'
+            }]);
+
+            if (insertError) {
+                return showPopup("Lỗi tham gia: " + insertError.message, "error");
             }
-            
-            // Các lỗi 23505 khác
-            return showPopup(`Lỗi trùng lặp không xác định (Mã 23505): ${errorMessage}`, "error");
 
-        } else {
-            // Các lỗi khác (Network, Foreign Key...)
-            return showPopup("Lỗi tham gia: " + upsertError.message, "error");
-        }
-      } else {
-        // UPSERT thành công (Insert mới HOẶC Re-join thành công)
-        if (existingUser && existingUser.role === 'contestant') { // Đã tồn tại và là Contestant
-            showPopup("Chào mừng bạn quay lại!");
-        } else if (existingUser && existingUser.role === 'host') {
-            // Trường hợp này không nên xảy ra nếu RLS/Policies được cấu hình đúng. 
-            // Nếu xảy ra: Có nghĩa là Host đang cố gắng re-join như Contestant.
-            return showPopup("Lỗi: Bạn đã đăng nhập với vai trò Host! Vui lòng chọn tên khác.", "error");
-        } else {
-             // Thường là Insert mới thành công
-            showPopup("Đã vào phòng " + code);
-        }
-      }
-      
-      // --- Logic khi vào phòng thành công (hoặc Re-join thành công) ---
-      myRoom = code;
-      myName = name;
+            myRoom = code;
+            myName = name;
 
-      // Ẩn hiện giao diện
-      if (typeof loginArea !== 'undefined') loginArea.style.display = 'none'; 
-      if (typeof gameArea !== 'undefined') gameArea.style.display = "flex";
-      
-      // Disable các input
-      if (roomCodeInput) roomCodeInput.disabled = true;
-      if (nameInput) nameInput.disabled = true;
-      if (posInput) posInput.disabled = true;
-      if (btnJoin) btnJoin.disabled = true;
+            loginArea.style.display = "none";
+            gameArea.style.display = "flex";
+            answerStatusBox.style.display = "block";
+            answerStatusBox.innerText = "";
 
-      // Reset ô thông báo trạng thái nếu có
-      if (typeof answerStatusBox !== 'undefined') {
-          answerStatusBox.style.display = "block";
-          answerStatusBox.innerText = "";
-      }
-
-      // Các hàm khởi tạo game
-      if (typeof syncServerTime === 'function') await syncServerTime();
-      if (typeof fetchBuzzList === 'function') await fetchBuzzList();
-    };
+            await syncServerTime();
+            await fetchBuzzList();
+            handleRoomUpdate(room);
+            subscribeRealtime();
+        };
 
         btnSend.onclick = async () => {
             if (lockedAnswer) return showPopup("Đang khóa!", "error");
