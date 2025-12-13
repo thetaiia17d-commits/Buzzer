@@ -188,7 +188,7 @@
     let buzzInterval = null;
     let roomChannel = null;
     let serverTimeOffset = 0;
-
+    
     // Biến lưu thời gian mở đáp án hiện tại
     let currentAnswerOpenTimeISO = null;
 
@@ -302,9 +302,7 @@
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
-      // Giả sử input position có id="positionInput"
-      const posInput = document.getElementById("positionInput");
-      const posString = posInput ? posInput.value.trim() : "";
+      const posString = document.getElementById("positionInput").value.trim();
 
       if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString)))
         return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
@@ -319,69 +317,56 @@
           return showPopup("Vị trí phải từ 1 đến 100", "error");
         }
       }
-
-      // Kiểm tra phòng tồn tại
+      
       const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-      // Insert người chơi
+      // BỎ QUA KIỂM TRA SELECT TRÙNG VỊ TRÍ. ĐỂ CSDL XỬ LÝ.
+
       const { error: insertError } = await supabase.from('participants').insert([{
         room_code: code,
         name: name,
         role: 'contestant',
-        position: positionVal // Nếu không nhập, giá trị là null
+        position: positionVal // Lưu vị trí vào DB (có thể là NULL)
       }]);
 
       if (insertError) {
-        // Log lỗi ra console để dễ debug nếu tên constraint khác
-        console.log("Insert Error Details:", insertError);
-
-        // Trường hợp 1: Trùng Tên (Primary Key: room_code + name)
+        // Lỗi trùng lặp key (cột name/room_code)
         if (insertError.code === '23505' && insertError.message.includes('participants_pkey')) {
-          const { data: existingUser } = await supabase
-            .from('participants')
-            .select('role')
-            .eq('room_code', code)
-            .eq('name', name)
-            .single();
+            const { data: existingUser } = await supabase
+              .from('participants')
+              .select('role')
+              .eq('room_code', code)
+              .eq('name', name)
+              .single();
 
-          if (existingUser && existingUser.role === 'contestant') {
-            showPopup("Chào mừng bạn quay lại!");
-            // Nếu quay lại thành công thì không return, để code chạy tiếp xuống logic vào phòng
-          } else {
-            return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
-          }
-
-          // Trường hợp 2: Trùng Vị trí (Unique Key: room_code + position)
-          // SỬA: Thêm điều kiện kiểm tra 'participants_position_key'
-        } else if (insertError.code === '23505' &&
-          (insertError.message.includes('participants_position_key') ||
-            insertError.message.includes('unique_position_per_room_if_not_null'))) {
-
-          return showPopup(`Vị trí ${positionVal} đã có người chọn. Vui lòng chọn số khác!`, "error");
-
+            if (existingUser && existingUser.role === 'contestant') {
+              showPopup("Chào mừng bạn quay lại!");
+            } else {
+              return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
+            }
+        // BỔ SUNG: Lỗi trùng lặp UNIQUE Constraint (room_code, position)
+        } else if (insertError.code === '23505' && insertError.message.includes('unique_position_per_room_if_not_null')) {
+            return showPopup(`Vị trí ${positionVal} đã có người chọn trong phòng này. Vui lòng chọn vị trí khác hoặc để trống!`, "error");
         } else {
-          // Các lỗi khác
           return showPopup("Lỗi tham gia: " + insertError.message, "error");
         }
       } else {
         showPopup("Đã vào phòng " + code);
       }
-
-      // --- Logic khi vào phòng thành công (hoặc Re-join thành công) ---
+      
       myRoom = code;
       myName = name;
 
-      if (gameArea) gameArea.style.display = "flex";
-      if (roomCodeInput) roomCodeInput.disabled = true;
-      if (nameInput) nameInput.disabled = true;
-      if (posInput) posInput.disabled = true;
-      if (btnJoin) btnJoin.disabled = true;
+      gameArea.style.display = "flex";
+      roomCodeInput.disabled = true;
+      nameInput.disabled = true;
+      document.getElementById("positionInput").disabled = true;
+      btnJoin.disabled = true;
 
-      // Các hàm khởi tạo game
-      if (typeof syncServerTime === 'function') await syncServerTime();
-      if (typeof handleRoomUpdate === 'function') handleRoomUpdate(room);
-      if (typeof subscribeRealtime === 'function') subscribeRealtime();
+      await syncServerTime();
+      handleRoomUpdate(room);
+      subscribeRealtime();
     };
 
     function subscribeRealtime() {
@@ -395,9 +380,9 @@
 
         // Vẫn giữ lắng nghe DELETE để phòng hờ, nhưng logic chính nằm ở handleRoomUpdate
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'answers', filter: `room_code=eq.${myRoom}` },
-          () => {
-            // Logic này có thể không chạy nếu DB config chưa bật FULL Replica Identity
-            if (lastAnswerStatus) lastAnswerStatus.innerText = "";
+          () => { 
+             // Logic này có thể không chạy nếu DB config chưa bật FULL Replica Identity
+             if (lastAnswerStatus) lastAnswerStatus.innerText = "";
           })
 
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` },
@@ -430,36 +415,36 @@
 
     async function handleRoomUpdate(roomData) {
       // --- LOGIC MỚI: TỰ ĐỘNG XÓA Ô CAM KHI CẦN THIẾT ---
-
+      
       // 1. Khi chuẩn bị mở vòng mới (pending_open) -> Xóa ngay
       if (roomData.answer_status === 'pending_open') {
         if (lastAnswerStatus) lastAnswerStatus.innerText = "";
         answerTextArea.value = "";
       }
-
+      
       // 2. Khi phòng đang bị KHÓA (locked) VÀ ô cam đang có chữ -> Kiểm tra DB xem dữ liệu còn không
       // Nếu Host bấm Reset -> Dữ liệu trong bảng answers bị xóa -> Query trả về null -> Xóa ô cam
       if (roomData.answer_status === 'locked' && lastAnswerStatus && lastAnswerStatus.innerText !== "") {
-        const { data } = await supabase
-          .from('answers')
-          .select('id')
-          .eq('room_code', myRoom)
-          .eq('name', myName)
-          .maybeSingle();
+          const { data } = await supabase
+             .from('answers')
+             .select('id')
+             .eq('room_code', myRoom)
+             .eq('name', myName)
+             .maybeSingle();
 
-        // Nếu không tìm thấy trong DB nghĩa là đã bị Reset
-        if (!data) {
-          lastAnswerStatus.innerText = "";
-          answerTextArea.value = "";
-          showPopup("Host đã reset đáp án!");
-        }
+          // Nếu không tìm thấy trong DB nghĩa là đã bị Reset
+          if (!data) {
+             lastAnswerStatus.innerText = "";
+             answerTextArea.value = "";
+             showPopup("Host đã reset đáp án!");
+          }
       }
       // ----------------------------------------------------
 
       if (roomData.answer_status === 'pending_open') {
         const start_time_iso = new Date(getServerTimeNow()).toISOString();
         const duration = roomData.answer_duration;
-        currentAnswerOpenTimeISO = start_time_iso;
+        currentAnswerOpenTimeISO = start_time_iso; 
 
         await supabase.from('rooms').update({
           answer_status: 'open',
@@ -603,10 +588,6 @@
 
     window.addEventListener("beforeunload", () => {
       leaveRoom();
-    });
-
-    document.addEventListener("contextmenu", function (e) {
-      e.preventDefault();
     });
   </script>
 </body>

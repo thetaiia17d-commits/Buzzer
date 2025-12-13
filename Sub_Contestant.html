@@ -41,8 +41,7 @@
             flex-direction: column;
             align-items: center;
             width: 100%;
-            max-width: 1000px;
-            /* Tăng kích thước khung bao */
+            max-width: 1000px; /* Tăng kích thước khung bao */
             margin: 50px auto 0 auto;
         }
 
@@ -92,18 +91,18 @@
         }
 
         #answer {
-            width: 800px;
-            height: 60px;
+            width: 800px; 
+            height: 60px; 
             font-size: 22px;
             margin: 0;
             box-sizing: border-box;
             text-align: center;
-            flex: none;
+            flex: none; 
         }
 
         #btnSend {
-            width: 100px;
-            height: 60px;
+            width: 100px; 
+            height: 60px; 
             background: yellow;
             color: black;
             font-size: 20px;
@@ -121,7 +120,7 @@
         }
 
         #btnBuzz {
-            width: 905px;
+            width: 905px; 
             height: 80px;
             background: blue;
             color: white;
@@ -163,8 +162,7 @@
         }
 
         table {
-            width: 900px;
-            /* Khớp với các nút trên */
+            width: 900px; /* Khớp với các nút trên */
             border-collapse: collapse;
             margin-top: 5px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
@@ -232,8 +230,7 @@
         <h1>Thí sinh</h1>
         <input id="roomCode" placeholder="Mã phòng (6 số)" type="number">
         <input id="name" placeholder="Tên của bạn">
-        <input id="positionInput" type="number" placeholder="Vị trí đứng (1-100, Optional)" min="1" max="100"
-            style="width: 250px; font-weight: bold;">
+        <input id="positionInput" type="number" placeholder="Vị trí đứng (1-100, Optional)" min="1" max="100" style="width: 250px; font-weight: bold;">
         <button id="btnJoin">Xác nhận vào phòng</button>
     </div>
 
@@ -489,86 +486,81 @@
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
             const name = nameInput.value.trim();
-            // Giả sử input position có id="positionInput"
+            
+            // Lấy giá trị vị trí
             const posInput = document.getElementById("positionInput");
             const posString = posInput ? posInput.value.trim() : "";
 
-            if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString)))
+            if (!codeString || !name || codeString.length !== 6)
                 return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
             const code = parseInt(codeString);
             let positionVal = null;
 
-            // Validate Position
+            // --- VALIDATE VỊ TRÍ (Nếu có nhập) ---
             if (posString) {
                 positionVal = parseInt(posString);
                 if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
-                    return showPopup("Vị trí phải từ 1 đến 100", "error");
+                    return showPopup("Vị trí phải là số từ 1 đến 100", "error");
                 }
             }
 
-            // Kiểm tra phòng tồn tại
+            // 1. Kiểm tra phòng
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-            // Insert người chơi
+            // 2. Validate Trùng tên (Kiểm tra sơ bộ)
+            const { data: existingUser } = await supabase
+                .from('participants')
+                .select('id')
+                .eq('room_code', code)
+                .eq('name', name)
+                .maybeSingle();
+
+            if (existingUser) {
+                return showPopup("Tên này đã có người dùng trong phòng!", "error");
+            }
+
+            // 3. Insert Participant (Kèm vị trí)
             const { error: insertError } = await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
                 role: 'contestant',
-                position: positionVal // Nếu không nhập, giá trị là null
+                position: positionVal // Thêm vị trí vào DB
             }]);
 
             if (insertError) {
-                // Log lỗi ra console để dễ debug nếu tên constraint khác
-                console.log("Insert Error Details:", insertError);
-
-                // Trường hợp 1: Trùng Tên (Primary Key: room_code + name)
-                if (insertError.code === '23505' && insertError.message.includes('participants_pkey')) {
-                    const { data: existingUser } = await supabase
-                        .from('participants')
-                        .select('role')
-                        .eq('room_code', code)
-                        .eq('name', name)
-                        .single();
-
-                    if (existingUser && existingUser.role === 'contestant') {
-                        showPopup("Chào mừng bạn quay lại!");
-                        // Nếu quay lại thành công thì không return, để code chạy tiếp xuống logic vào phòng
-                    } else {
-                        return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
-                    }
-
-                    // Trường hợp 2: Trùng Vị trí (Unique Key: room_code + position)
-                    // SỬA: Thêm điều kiện kiểm tra 'participants_position_key'
-                } else if (insertError.code === '23505' &&
-                    (insertError.message.includes('participants_position_key') ||
-                        insertError.message.includes('unique_position_per_room_if_not_null'))) {
-
-                    return showPopup(`Vị trí ${positionVal} đã có người chọn. Vui lòng chọn số khác!`, "error");
-
-                } else {
-                    // Các lỗi khác
-                    return showPopup("Lỗi tham gia: " + insertError.message, "error");
+                // Kiểm tra lỗi trùng Vị trí (Dựa vào Constraint đã tạo trong DB)
+                if (insertError.code === '23505' && insertError.message.includes('unique_position_per_room_if_not_null')) {
+                    return showPopup(`Vị trí số ${positionVal} đã có người chọn! Vui lòng chọn số khác.`, "error");
                 }
-            } else {
-                showPopup("Đã vào phòng " + code);
+                // Kiểm tra lại lỗi trùng tên (phòng trường hợp 2 người vào cùng lúc)
+                if (insertError.code === '23505') {
+                    return showPopup("Tên hoặc Vị trí đã tồn tại.", "error");
+                }
+                return showPopup("Lỗi tham gia: " + insertError.message, "error");
             }
 
-            // --- Logic khi vào phòng thành công (hoặc Re-join thành công) ---
+            // --- THÀNH CÔNG ---
             myRoom = code;
             myName = name;
 
-            if (gameArea) gameArea.style.display = "flex";
-            if (roomCodeInput) roomCodeInput.disabled = true;
-            if (nameInput) nameInput.disabled = true;
-            if (posInput) posInput.disabled = true;
-            if (btnJoin) btnJoin.disabled = true;
+            // Ẩn Login, Hiện Game (Giữ nguyên logic cũ của bạn)
+            loginArea.style.display = "none";
+            gameArea.style.display = "flex";
+            
+            // Nếu có answerStatusBox thì hiển thị
+            if (typeof answerStatusBox !== 'undefined') {
+                answerStatusBox.style.display = "block";
+                answerStatusBox.innerText = "";
+            }
 
-            // Các hàm khởi tạo game
-            if (typeof syncServerTime === 'function') await syncServerTime();
-            if (typeof handleRoomUpdate === 'function') handleRoomUpdate(room);
-            if (typeof subscribeRealtime === 'function') subscribeRealtime();
+            await syncServerTime();
+            // Nếu hàm fetchBuzzList có tồn tại trong code của bạn thì gọi nó
+            if (typeof fetchBuzzList === 'function') await fetchBuzzList();
+            
+            handleRoomUpdate(room);
+            subscribeRealtime();
         };
 
         btnSend.onclick = async () => {
@@ -751,10 +743,6 @@
             if (myRoom && myName) {
                 await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
             }
-        });
-
-        document.addEventListener("contextmenu", function (e) {
-            e.preventDefault();
         });
     </script>
 </body>
