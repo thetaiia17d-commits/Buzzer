@@ -254,9 +254,9 @@
                 // Lấy vị trí để hiển thị kèm (nếu muốn)
                 let pPos = "";
                 const pInfo = allParticipants.find(p => p.name === item.name);
-                if(pInfo && pInfo.position) pPos = `(#${pInfo.position}) `;
+                if(pInfo && pInfo.position) pPos = "";
 
-                let content = `${pPos}${item.name} | ${answerText}`;
+                let content = `${item.name} | ${answerText}`;
                 if (displayTimeOption === 'show') {
                     content += ` | ${timeStr}`;
                 }
@@ -304,6 +304,10 @@
         }
 
         init();
+
+        document.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+        });
     </script>
 </body>
 
