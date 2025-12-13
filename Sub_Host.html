@@ -685,7 +685,7 @@
         let displayName = item.name;
         const pInfo = allParticipants.find(p => p.name === item.name);
         if(pInfo && pInfo.position) {
-            displayName = `(#${pInfo.position}) ${item.name}`; 
+            displayName = `${item.name}`; 
         }
 
         row.insertCell().innerText = displayName;
@@ -1502,6 +1502,9 @@
 
     window.addEventListener("beforeunload", () => { leaveRoom(); });
 
+    document.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+        });
   </script>
 </body>
 
