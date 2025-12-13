@@ -157,6 +157,7 @@
   <input id="roomCode" placeholder="Mã phòng">
   <input id="name" placeholder="Tên của bạn">
   <button id="btnJoin">Xác nhận</button>
+  <input id="positionInput" type="number" placeholder="Vị trí (Optional)" min="1" max="100" style="width: 150px;">
 
   <div id="gameArea">
     <div class="timer-info">Thời gian gửi đáp án: <span id="answerCountdown" class="timer-countdown">--.--s</span>
@@ -301,48 +302,66 @@
     btnJoin.onclick = async () => {
       const codeString = roomCodeInput.value.trim();
       const name = nameInput.value.trim();
+      const posString = document.getElementById("positionInput").value.trim();
 
       if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString)))
         return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
       const code = parseInt(codeString);
+      let positionVal = null;
 
+      // Validate Position
+      if (posString) {
+        positionVal = parseInt(posString);
+        if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
+          return showPopup("Vị trí phải từ 1 đến 100", "error");
+        }
+      }
+      
       const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
       if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
+
+      // BỎ QUA KIỂM TRA SELECT TRÙNG VỊ TRÍ. ĐỂ CSDL XỬ LÝ.
 
       const { error: insertError } = await supabase.from('participants').insert([{
         room_code: code,
         name: name,
-        role: 'contestant'
+        role: 'contestant',
+        position: positionVal // Lưu vị trí vào DB (có thể là NULL)
       }]);
 
       if (insertError) {
-        if (insertError.code === '23505' || insertError.message.includes('duplicate')) {
-          const { data: existingUser } = await supabase
-            .from('participants')
-            .select('role')
-            .eq('room_code', code)
-            .eq('name', name)
-            .single();
+        // Lỗi trùng lặp key (cột name/room_code)
+        if (insertError.code === '23505' && insertError.message.includes('participants_pkey')) {
+            const { data: existingUser } = await supabase
+              .from('participants')
+              .select('role')
+              .eq('room_code', code)
+              .eq('name', name)
+              .single();
 
-          if (existingUser && existingUser.role === 'contestant') {
-            showPopup("Chào mừng bạn quay lại!");
-          } else {
-            return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
-          }
+            if (existingUser && existingUser.role === 'contestant') {
+              showPopup("Chào mừng bạn quay lại!");
+            } else {
+              return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
+            }
+        // BỔ SUNG: Lỗi trùng lặp UNIQUE Constraint (room_code, position)
+        } else if (insertError.code === '23505' && insertError.message.includes('unique_position_per_room_if_not_null')) {
+            return showPopup(`Vị trí ${positionVal} đã có người chọn trong phòng này. Vui lòng chọn vị trí khác hoặc để trống!`, "error");
         } else {
           return showPopup("Lỗi tham gia: " + insertError.message, "error");
         }
       } else {
         showPopup("Đã vào phòng " + code);
       }
-
+      
       myRoom = code;
       myName = name;
 
       gameArea.style.display = "flex";
       roomCodeInput.disabled = true;
       nameInput.disabled = true;
+      document.getElementById("positionInput").disabled = true;
       btnJoin.disabled = true;
 
       await syncServerTime();
