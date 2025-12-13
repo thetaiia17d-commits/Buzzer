@@ -685,7 +685,7 @@
         let displayName = item.name;
         const pInfo = allParticipants.find(p => p.name === item.name);
         if(pInfo && pInfo.position) {
-            displayName = `${item.name}`; 
+            displayName = item.name; 
         }
 
         row.insertCell().innerText = displayName;
