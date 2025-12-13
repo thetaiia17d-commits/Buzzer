@@ -484,84 +484,106 @@
 
         // --- MAIN ACTIONS ---
         btnJoin.onclick = async () => {
-            const codeString = roomCodeInput.value.trim();
-            const name = nameInput.value.trim();
+      const codeString = roomCodeInput.value.trim();
+      const name = nameInput.value.trim();
+      // Lấy input position (kiểm tra id="positionInput" tồn tại)
+      const posInput = document.getElementById("positionInput");
+      const posString = posInput ? posInput.value.trim() : "";
+
+      if (!codeString || !name || codeString.length !== 6 || isNaN(parseInt(codeString)))
+        return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
+
+      const code = parseInt(codeString);
+      let positionVal = null;
+
+      // Validate Position
+      if (posString) {
+        positionVal = parseInt(posString);
+        if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
+          return showPopup("Vị trí phải từ 1 đến 100", "error");
+        }
+      }
+      
+      // Kiểm tra phòng tồn tại
+      const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
+      if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
+
+      // Thực hiện Insert
+      const { error: insertError } = await supabase.from('participants').insert([{
+        room_code: code,
+        name: name,
+        role: 'contestant',
+        position: positionVal // Lưu vị trí vào DB (có thể là NULL)
+      }]);
+
+      if (insertError) {
+        // LUÔN LUÔN in lỗi ra console để debug.
+        console.error("Chi tiết lỗi:", insertError); 
+
+        // Mã lỗi '23505' là mã lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL (Supabase)
+        if (insertError.code === '23505') {
             
-            // Lấy giá trị vị trí
-            const posInput = document.getElementById("positionInput");
-            const posString = posInput ? posInput.value.trim() : "";
+            // Trường hợp 1: Trùng Tên (Primary Key: room_code + name)
+            // Kiểm tra lỗi trùng Primary Key (thường là 'participants_pkey')
+            if (insertError.message.includes('participants_pkey') || insertError.message.includes('room_code_name_pkey')) {
+                
+                const { data: existingUser } = await supabase
+                    .from('participants')
+                    .select('role')
+                    .eq('room_code', code)
+                    .eq('name', name)
+                    .single();
 
-            if (!codeString || !name || codeString.length !== 6)
-                return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
-
-            const code = parseInt(codeString);
-            let positionVal = null;
-
-            // --- VALIDATE VỊ TRÍ (Nếu có nhập) ---
-            if (posString) {
-                positionVal = parseInt(posString);
-                if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
-                    return showPopup("Vị trí phải là số từ 1 đến 100", "error");
+                if (existingUser && existingUser.role === 'contestant') {
+                    showPopup("Chào mừng bạn quay lại!");
+                    // Không return, để code chạy xuống dưới vào phòng.
+                } else {
+                    return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
                 }
-            }
-
-            // 1. Kiểm tra phòng
-            const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
-            if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
-
-            // 2. Validate Trùng tên (Kiểm tra sơ bộ)
-            const { data: existingUser } = await supabase
-                .from('participants')
-                .select('id')
-                .eq('room_code', code)
-                .eq('name', name)
-                .maybeSingle();
-
-            if (existingUser) {
-                return showPopup("Tên này đã có người dùng trong phòng!", "error");
-            }
-
-            // 3. Insert Participant (Kèm vị trí)
-            const { error: insertError } = await supabase.from('participants').insert([{
-                room_code: code,
-                name: name,
-                role: 'contestant',
-                position: positionVal // Thêm vị trí vào DB
-            }]);
-
-            if (insertError) {
-                // Kiểm tra lỗi trùng Vị trí (Dựa vào Constraint đã tạo trong DB)
-                if (insertError.code === '23505' && insertError.message.includes('unique_position_per_room_if_not_null')) {
-                    return showPopup(`Vị trí số ${positionVal} đã có người chọn! Vui lòng chọn số khác.`, "error");
-                }
-                // Kiểm tra lại lỗi trùng tên (phòng trường hợp 2 người vào cùng lúc)
-                if (insertError.code === '23505') {
-                    return showPopup("Tên hoặc Vị trí đã tồn tại.", "error");
-                }
-                return showPopup("Lỗi tham gia: " + insertError.message, "error");
-            }
-
-            // --- THÀNH CÔNG ---
-            myRoom = code;
-            myName = name;
-
-            // Ẩn Login, Hiện Game (Giữ nguyên logic cũ của bạn)
-            loginArea.style.display = "none";
-            gameArea.style.display = "flex";
             
-            // Nếu có answerStatusBox thì hiển thị
-            if (typeof answerStatusBox !== 'undefined') {
-                answerStatusBox.style.display = "block";
-                answerStatusBox.innerText = "";
-            }
-
-            await syncServerTime();
-            // Nếu hàm fetchBuzzList có tồn tại trong code của bạn thì gọi nó
-            if (typeof fetchBuzzList === 'function') await fetchBuzzList();
+            // Trường hợp 2: Trùng Vị trí (Unique Key: room_code + position)
+            // Nếu người dùng có nhập vị trí (positionVal !== null) VÀ lỗi là UNIQUE CONSTRAINT,
+            // thì gần như chắc chắn là lỗi trùng vị trí.
+            } else if (positionVal !== null) { 
+                return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng này. Vui lòng chọn số khác!`, "error");
             
-            handleRoomUpdate(room);
-            subscribeRealtime();
-        };
+            // Trường hợp 3: Lỗi UNIQUE CONSTRAINT KHÁC
+            } else { 
+                return showPopup("Lỗi tham gia do dữ liệu bị trùng lặp (UNIQUE CONSTRAINT). Vui lòng kiểm tra lại Room Code/Tên.", "error");
+            }
+        
+        } else {
+            // Các lỗi không phải UNIQUE CONSTRAINT (ví dụ: Network, Foreign Key...)
+            return showPopup("Lỗi tham gia: " + insertError.message, "error");
+        }
+      } else {
+        showPopup("Đã vào phòng " + code);
+      }
+      
+      // --- Logic khi vào phòng thành công (hoặc Re-join thành công) ---
+      myRoom = code;
+      myName = name;
+
+      // Ẩn hiện giao diện
+      if (typeof loginArea !== 'undefined') loginArea.style.display = 'none'; 
+      gameArea.style.display = "flex";
+      
+      // Disable các input
+      if (roomCodeInput) roomCodeInput.disabled = true;
+      if (nameInput) nameInput.disabled = true;
+      if (posInput) posInput.disabled = true;
+      if (btnJoin) btnJoin.disabled = true;
+
+      // Reset ô thông báo trạng thái nếu có
+      if (typeof answerStatusBox !== 'undefined') {
+          answerStatusBox.style.display = "block";
+          answerStatusBox.innerText = "";
+      }
+
+      // Các hàm khởi tạo game
+      if (typeof syncServerTime === 'function') await syncServerTime();
+      if (typeof fetchBuzzList === 'function') await fetchBuzzList();
+    };
 
         btnSend.onclick = async () => {
             if (lockedAnswer) return showPopup("Đang khóa!", "error");
