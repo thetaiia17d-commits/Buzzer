@@ -109,6 +109,9 @@
 
     <div id="sortOptions">
         <label>
+            <input type="radio" name="sortOption" value="position" onchange="render()"> Theo vị trí đứng
+        </label>
+        <label>
             <input type="radio" name="sortOption" value="join" onchange="render()"> Theo thứ tự vào phòng
         </label>
         <label>
@@ -143,9 +146,10 @@
 
         async function fetchParticipants() {
             if (!roomCode) return;
+            // BỔ SUNG: select thêm 'position'
             const { data } = await supabase
                 .from('participants')
-                .select('name, created_at')
+                .select('name, created_at, position') 
                 .eq('room_code', roomCode)
                 .order('created_at', { ascending: true });
 
@@ -213,6 +217,26 @@
                     const idxB = orderMap[b.name] !== undefined ? orderMap[b.name] : 9999;
                     return idxA - idxB;
                 });
+            } else if (sortOption === "position") {
+                // BỔ SUNG LOGIC SORT POSITION
+                const posMap = {};
+                allParticipants.forEach(p => posMap[p.name] = p.position);
+
+                displayData.sort((a, b) => {
+                    const posA = posMap[a.name];
+                    const posB = posMap[b.name];
+
+                    // Có vị trí đứng thì ưu tiên lên trước
+                    if (posA != null && posB != null) return posA - posB;
+                    if (posA != null && posB == null) return -1;
+                    if (posA == null && posB != null) return 1;
+
+                    // Nếu không có vị trí, fallback về thứ tự vào phòng
+                    // (Lấy index từ mảng allParticipants đã sort theo time)
+                    const idxA = allParticipants.findIndex(p => p.name === a.name);
+                    const idxB = allParticipants.findIndex(p => p.name === b.name);
+                    return idxA - idxB;
+                });
             }
 
             displayData.forEach(item => {
@@ -227,7 +251,12 @@
                 const div = document.createElement('div');
                 div.className = 'result-row';
 
-                let content = `${item.name} | ${answerText}`;
+                // Lấy vị trí để hiển thị kèm (nếu muốn)
+                let pPos = "";
+                const pInfo = allParticipants.find(p => p.name === item.name);
+                if(pInfo && pInfo.position) pPos = `(#${pInfo.position}) `;
+
+                let content = `${pPos}${item.name} | ${answerText}`;
                 if (displayTimeOption === 'show') {
                     content += ` | ${timeStr}`;
                 }
