@@ -518,42 +518,46 @@
 
       if (insertError) {
         console.error("Chi tiết lỗi:", insertError); 
+        const errorMessage = insertError.message || "";
 
-        // Mã lỗi '23505' là mã lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL
+        // Mã lỗi '23505' là lỗi UNIQUE CONSTRAINT VIOLATION của PostgreSQL
         if (insertError.code === '23505') {
-            const errorMessage = insertError.message || "";
             
-            // TRƯỜNG HỢP 1: Lỗi trùng Vị trí
-            // KIỂM TRA CHÍNH XÁC tên constraint mà bạn báo lỗi.
+            // TRƯỜNG HỢP 1: Lỗi trùng Vị trí ("participants_position_key")
+            // Ràng buộc này là UNIQUE(room_code, position)
             if (errorMessage.includes('participants_position_key')) {
-                // Lỗi chỉ xảy ra khi positionVal != NULL và bị trùng
+                // Lỗi chỉ xảy ra khi người dùng cố tình nhập positionVal bị trùng
                 return showPopup(`Vị trí số ${positionVal} đã có người chọn trong phòng ${code}. Vui lòng chọn số khác hoặc để trống!`, "error");
             }
             
             // TRƯỜNG HỢP 2: Lỗi trùng Tên (Primary Key: room_code + name)
-            // Nếu không phải lỗi vị trí, ta giả định là lỗi Primary Key (Trùng tên).
-            if (errorMessage.includes('participants_pkey') || errorMessage.includes('room_code_name_pkey') || !errorMessage.includes('participants_position_key')) {
+            // Nếu không phải lỗi vị trí, ta giả định là lỗi Primary Key (Trùng tên)
+            if (errorMessage.includes('participants_pkey') || errorMessage.includes('room_code_name_pkey')) {
                 
+                // Kiểm tra người dùng này có phải là Contestant cũ không
                 const { data: existingUser } = await supabase
                     .from('participants')
                     .select('role')
                     .eq('room_code', code)
                     .eq('name', name)
-                    .single();
+                    .maybeSingle(); // Dùng maybeSingle vì có thể người dùng đã bị xóa ngay trước đó.
 
                 if (existingUser && existingUser.role === 'contestant') {
                     showPopup("Chào mừng bạn quay lại!");
-                    // Không return, để chạy xuống phần setup giao diện game
-                } else {
+                    // Không return, để code chạy xuống phần setup giao diện game (Re-join thành công)
+                } else if (existingUser && existingUser.role === 'host') {
                     return showPopup("Tên này đã được Ban tổ chức sử dụng!", "error");
+                } else {
+                    // Trường hợp này hiếm, thường do lỗi Race Condition, nhưng ta vẫn nên hiển thị lỗi chung.
+                    return showPopup("Lỗi tham gia do Tên đã tồn tại. Vui lòng thử lại với tên khác.", "error");
                 }
             } else { 
-                // Lỗi 23505 khác
+                // Lỗi 23505 khác không phải lỗi tên hay vị trí đã biết
                 return showPopup("Lỗi tham gia do dữ liệu bị trùng lặp không xác định.", "error");
             }
         
         } else {
-            // Các lỗi không phải UNIQUE CONSTRAINT
+            // Các lỗi không phải UNIQUE CONSTRAINT (Network, Foreign Key...)
             return showPopup("Lỗi tham gia: " + insertError.message, "error");
         }
       } else {
