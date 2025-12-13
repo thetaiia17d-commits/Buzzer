@@ -486,30 +486,16 @@
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
             const name = nameInput.value.trim();
-            
-            // Lấy giá trị vị trí
-            const posInput = document.getElementById("positionInput");
-            const posString = posInput ? posInput.value.trim() : "";
-
             if (!codeString || !name || codeString.length !== 6)
                 return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
             const code = parseInt(codeString);
-            let positionVal = null;
-
-            // --- VALIDATE VỊ TRÍ (Nếu có nhập) ---
-            if (posString) {
-                positionVal = parseInt(posString);
-                if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
-                    return showPopup("Vị trí phải là số từ 1 đến 100", "error");
-                }
-            }
 
             // 1. Kiểm tra phòng
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-            // 2. Validate Trùng tên (Kiểm tra sơ bộ)
+            // 2. Validate Trùng tên
             const { data: existingUser } = await supabase
                 .from('participants')
                 .select('id')
@@ -521,44 +507,27 @@
                 return showPopup("Tên này đã có người dùng trong phòng!", "error");
             }
 
-            // 3. Insert Participant (Kèm vị trí)
+            // 3. Insert Participant
             const { error: insertError } = await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
-                role: 'contestant',
-                position: positionVal // Thêm vị trí vào DB
+                role: 'contestant'
             }]);
 
             if (insertError) {
-                // Kiểm tra lỗi trùng Vị trí (Dựa vào Constraint đã tạo trong DB)
-                if (insertError.code === '23505' && insertError.message.includes('unique_position_per_room_if_not_null')) {
-                    return showPopup(`Vị trí số ${positionVal} đã có người chọn! Vui lòng chọn số khác.`, "error");
-                }
-                // Kiểm tra lại lỗi trùng tên (phòng trường hợp 2 người vào cùng lúc)
-                if (insertError.code === '23505') {
-                    return showPopup("Tên hoặc Vị trí đã tồn tại.", "error");
-                }
                 return showPopup("Lỗi tham gia: " + insertError.message, "error");
             }
 
-            // --- THÀNH CÔNG ---
             myRoom = code;
             myName = name;
 
-            // Ẩn Login, Hiện Game (Giữ nguyên logic cũ của bạn)
             loginArea.style.display = "none";
             gameArea.style.display = "flex";
-            
-            // Nếu có answerStatusBox thì hiển thị
-            if (typeof answerStatusBox !== 'undefined') {
-                answerStatusBox.style.display = "block";
-                answerStatusBox.innerText = "";
-            }
+            answerStatusBox.style.display = "block";
+            answerStatusBox.innerText = "";
 
             await syncServerTime();
-            // Nếu hàm fetchBuzzList có tồn tại trong code của bạn thì gọi nó
-            if (typeof fetchBuzzList === 'function') await fetchBuzzList();
-            
+            await fetchBuzzList();
             handleRoomUpdate(room);
             subscribeRealtime();
         };
