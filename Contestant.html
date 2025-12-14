@@ -589,6 +589,10 @@
     window.addEventListener("beforeunload", () => {
       leaveRoom();
     });
+
+    document.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+        });
   </script>
 </body>
 

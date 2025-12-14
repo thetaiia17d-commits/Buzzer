@@ -713,6 +713,10 @@
                 await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
             }
         });
+
+        document.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+        });
     </script>
 </body>
 
