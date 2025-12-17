@@ -508,6 +508,16 @@
       return (diff / 1000).toFixed(2);
     }
 
+    function formatBuzzTime(isoDate, startTime) {
+      if (!startTime || !isoDate) return "0.00";
+      const ts = new Date(isoDate).getTime();
+      let diff = ts - startTime;
+      if (diff < 0) diff = 0;
+      // Dữ liệu 'created_at' bây giờ là thời điểm bấm thực tế từ client
+      // Nên diff chính xác là thời gian suy nghĩ của thí sinh (không kèm độ trễ mạng)
+      return (diff / 1000).toFixed(3) + "s";
+    }
+
     async function syncServerTime() {
       if (!currentRoom) return;
       const tempName = "SYNC_TIME_" + Math.random();
@@ -699,7 +709,7 @@
       Array.from(uniqueBuzzMap.values()).forEach(item => {
         const row = tblBuzzBody.insertRow();
         row.insertCell().innerText = item.name;
-        row.insertCell().innerText = formatTimeDisplay(item.created_at, buzzStartTime);
+        row.insertCell().innerText = formatBuzzTime(item.created_at, buzzStartTime);
       });
     }
 
