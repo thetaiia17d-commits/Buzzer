@@ -718,7 +718,6 @@
       if (!ul) return;
       ul.innerHTML = "";
 
-      // Loại bỏ trùng lặp
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => {
         if (!uniqueParticipantsMap.has(u.name)) {
@@ -729,11 +728,10 @@
       let displayUsers = Array.from(uniqueParticipantsMap.values());
 
       displayUsers.sort((a, b) => {
-        // 1. Ưu tiên Role trước (Host > Manager > Thí sinh)
         const getRolePriority = (user) => {
           if (user.role === 'host') return 1;
           if (user.role === 'manager') return 2;
-          if (user.name.startsWith("SYNC_")) return 4;
+          if (user.name && user.name.startsWith("SYNC_")) return 4;
           return 3;
         };
 
@@ -741,26 +739,15 @@
         const prioB = getRolePriority(b);
         if (prioA !== prioB) return prioA - prioB;
 
-        // 2. Nếu là thí sinh (Role == 3), xét logic Position (1) - Thời gian (2)
         if (prioA === 3) {
-          // Chuyển về số để so sánh chính xác
-          const posA = (a.position !== null && a.position !== undefined && a.position !== "") ? Number(a.position) : null;
-          const posB = (b.position !== null && b.position !== undefined && b.position !== "") ? Number(b.position) : null;
+          // Ép kiểu về số, nếu không có giá trị thì gán là Infinity
+          const posA = (a.position !== null && a.position !== undefined && a.position !== "") ? Number(a.position) : Infinity;
+          const posB = (b.position !== null && b.position !== undefined && b.position !== "") ? Number(b.position) : Infinity;
 
-          // Ưu tiên 1: Vị trí đứng
-          if (posA !== null && posB !== null) {
-            if (posA !== posB) return posA - posB;
-          } else if (posA !== null) {
-            return -1; // A có vị trí, B không -> A lên trước
-          } else if (posB !== null) {
-            return 1;  // B có vị trí, A không -> B lên trước
-          }
-
-          // Ưu tiên 2: Cùng có vị trí giống nhau hoặc cả 2 không có -> Xếp theo thời gian (created_at)
+          if (posA !== posB) return posA - posB;
           return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         }
 
-        // Các role khác (Host/Manager) xếp theo thời gian
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
@@ -769,8 +756,10 @@
         let nameHtml = "";
         let roleSpan = "";
 
-        // Hiển thị định dạng [# Vị trí] nếu là thí sinh và có nhập vị trí
-        let posDisplay = (u.role === 'contestant' && u.position) ? `[# ${u.position}] ` : "";
+        // --- SỬA LẠI PHẦN KIỂM TRA VỊ TRÍ ---
+        // Kiểm tra kỹ nếu position có giá trị (kể cả số 0)
+        let hasPosition = u.position !== null && u.position !== undefined && u.position !== "";
+        let posDisplay = (u.role === 'contestant' && hasPosition) ? `[# ${u.position}] ` : "";
 
         if (u.role === 'host') {
           nameHtml = `<b style="color: green;">${u.name}</b>`;
@@ -778,11 +767,11 @@
         } else if (u.role === 'manager') {
           nameHtml = `<b style="color: blue;">${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: blue; margin-left: 5px;">(Quản lý)</span>';
-        } else if (u.name.startsWith("SYNC_")) {
+        } else if (u.name && u.name.startsWith("SYNC_")) {
           nameHtml = `<b style="color: purple;">${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: purple; margin-left: 5px;">(System)</span>';
         } else {
-          // Màu đỏ cho thí sinh, kèm số thứ tự vị trí đứng phía trước tên
+          // Hiển thị [# X] Tên Thí Sinh với màu đỏ
           nameHtml = `<b style="color: red;">${posDisplay}${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: red; margin-left: 5px;">(Thí sinh)</span>';
         }
