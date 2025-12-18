@@ -245,7 +245,7 @@
                 if (roomStartTime && submitTime > roomStartTime) {
                     diff = (submitTime - roomStartTime) / 1000;
                 }
-                const timeStr = (roomStartTime && diff > 0) ? diff.toFixed(3) + 's' : 'N/A';
+                const timeStr = (roomStartTime && diff > 0) ? diff.toFixed(2) : 'N/A';
                 const answerText = item.answer_text || item.answer || "[Không có đáp án]";
 
                 const div = document.createElement('div');
