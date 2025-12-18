@@ -431,13 +431,26 @@
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
             const name = nameInput.value.trim();
+            // 1. Lấy giá trị vị trí từ ô input
+            const posValue = document.getElementById("positionInput").value.trim(); 
+
             if (!codeString || !name || codeString.length !== 6) return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
+            
             const code = parseInt(codeString);
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
+            
             const { data: existingUser } = await supabase.from('participants').select('id').eq('room_code', code).eq('name', name).maybeSingle();
             if (existingUser) return showPopup("Tên này đã có người dùng trong phòng!", "error");
-            await supabase.from('participants').insert([{ room_code: code, name: name, role: 'contestant' }]);
+            
+            // 2. Gửi thêm cột position lên database
+            await supabase.from('participants').insert([{ 
+                room_code: code, 
+                name: name, 
+                role: 'contestant',
+                position: posValue // Sử dụng tên "position" cho đồng bộ
+            }]);
+
             myRoom = code; myName = name;
             loginArea.style.display = "none"; gameArea.style.display = "flex";
             answerStatusBox.style.display = "block"; resetAnswerStatusBox();
