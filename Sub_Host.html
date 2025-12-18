@@ -642,7 +642,7 @@
       if (!tblAnswersBody) return;
       tblAnswersBody.innerHTML = "";
       const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
-      
+
       const latestAnswersMap = new Map();
       answers.forEach(item => {
         const existing = latestAnswersMap.get(item.name);
@@ -660,14 +660,14 @@
         allParticipants.forEach(p => posMap[p.name] = p.position);
 
         displayData.sort((a, b) => {
-            const posA = posMap[a.name];
-            const posB = posMap[b.name];
+          const posA = posMap[a.name];
+          const posB = posMap[b.name];
 
-            if (posA != null && posB != null) return posA - posB;
-            if (posA != null && posB == null) return -1;
-            if (posA == null && posB != null) return 1;
-            
-            return a.name.localeCompare(b.name);
+          if (posA != null && posB != null) return posA - posB;
+          if (posA != null && posB == null) return -1;
+          if (posA == null && posB != null) return 1;
+
+          return a.name.localeCompare(b.name);
         });
       } else {
         // Sort option = join
@@ -685,10 +685,10 @@
 
       displayData.forEach(item => {
         const row = tblAnswersBody.insertRow();
-        
+
         // --- CẬP NHẬT: Chỉ hiển thị tên gốc, KHÔNG kèm vị trí ---
-        row.insertCell().innerText = item.name; 
-        
+        row.insertCell().innerText = item.name;
+
         row.insertCell().innerText = item.answer_text;
         row.insertCell().innerText = formatTimeDisplay(item.created_at, answerStartTime);
       });
@@ -718,6 +718,7 @@
       if (!ul) return;
       ul.innerHTML = "";
 
+      // Loại bỏ trùng lặp
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => {
         if (!uniqueParticipantsMap.has(u.name)) {
@@ -735,27 +736,31 @@
           if (user.name.startsWith("SYNC_")) return 4;
           return 3;
         };
+
         const prioA = getRolePriority(a);
         const prioB = getRolePriority(b);
         if (prioA !== prioB) return prioA - prioB;
 
-        // 2. Nếu là thí sinh (Role == 3), xét logic Position
+        // 2. Nếu là thí sinh (Role == 3), xét logic Position (1) - Thời gian (2)
         if (prioA === 3) {
-            const posA = a.position;
-            const posB = b.position;
+          // Chuyển về số để so sánh chính xác
+          const posA = (a.position !== null && a.position !== undefined && a.position !== "") ? Number(a.position) : null;
+          const posB = (b.position !== null && b.position !== undefined && b.position !== "") ? Number(b.position) : null;
 
-            // Nếu cả 2 có position -> tăng dần
-            if (posA != null && posB != null) return posA - posB;
-            // A có, B không -> A trước
-            if (posA != null && posB == null) return -1;
-            // B có, A không -> B trước
-            if (posA == null && posB != null) return 1;
-            
-            // Cả 2 không có -> Xếp theo thời gian vào (created_at)
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          // Ưu tiên 1: Vị trí đứng
+          if (posA !== null && posB !== null) {
+            if (posA !== posB) return posA - posB;
+          } else if (posA !== null) {
+            return -1; // A có vị trí, B không -> A lên trước
+          } else if (posB !== null) {
+            return 1;  // B có vị trí, A không -> B lên trước
+          }
+
+          // Ưu tiên 2: Cùng có vị trí giống nhau hoặc cả 2 không có -> Xếp theo thời gian (created_at)
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         }
 
-        // Các role khác xếp theo thời gian
+        // Các role khác (Host/Manager) xếp theo thời gian
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
@@ -763,8 +768,8 @@
         const li = document.createElement("li");
         let nameHtml = "";
         let roleSpan = "";
-        
-        // --- CẬP NHẬT: Hiển thị [VT: X] rõ ràng trong danh sách ---
+
+        // Hiển thị định dạng [# Vị trí] nếu là thí sinh và có nhập vị trí
         let posDisplay = (u.role === 'contestant' && u.position) ? `[# ${u.position}] ` : "";
 
         if (u.role === 'host') {
@@ -777,7 +782,7 @@
           nameHtml = `<b style="color: purple;">${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: purple; margin-left: 5px;">(System)</span>';
         } else {
-          // Màu đỏ cho thí sinh, kèm vị trí đứng
+          // Màu đỏ cho thí sinh, kèm số thứ tự vị trí đứng phía trước tên
           nameHtml = `<b style="color: red;">${posDisplay}${u.name}</b>`;
           roleSpan = '<span style="font-weight: bold; color: red; margin-left: 5px;">(Thí sinh)</span>';
         }
@@ -1504,8 +1509,8 @@
     window.addEventListener("beforeunload", () => { leaveRoom(); });
 
     document.addEventListener("contextmenu", function (e) {
-            e.preventDefault();
-        });
+      e.preventDefault();
+    });
   </script>
 </body>
 
