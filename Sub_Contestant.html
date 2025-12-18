@@ -432,23 +432,29 @@
             const codeString = roomCodeInput.value.trim();
             const name = nameInput.value.trim();
             // 1. Lấy giá trị vị trí từ ô input
-            const posValue = document.getElementById("positionInput").value.trim(); 
+            const posValue = document.getElementById("positionInput").value.trim();
 
             if (!codeString || !name || codeString.length !== 6) return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
-            
+
             const code = parseInt(codeString);
+            let positionVal = null;
+            if (posString) {
+                positionVal = parseInt(posValue);
+                if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
+                    return showPopup("Vị trí phải từ 1 đến 100", "error");
+                }
+            }
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
-            
+
             const { data: existingUser } = await supabase.from('participants').select('id').eq('room_code', code).eq('name', name).maybeSingle();
             if (existingUser) return showPopup("Tên này đã có người dùng trong phòng!", "error");
-            
             // 2. Gửi thêm cột position lên database
-            await supabase.from('participants').insert([{ 
-                room_code: code, 
-                name: name, 
+            await supabase.from('participants').insert([{
+                room_code: code,
+                name: name,
                 role: 'contestant',
-                pos: posValue // Sử dụng tên "position" cho đồng bộ
+                position: posValue // Sử dụng tên "position" cho đồng bộ
             }]);
 
             myRoom = code; myName = name;
