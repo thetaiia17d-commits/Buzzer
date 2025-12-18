@@ -497,7 +497,7 @@
       return new Date(estimatedServerTime).toISOString();
     }
 
-    // --- Format 2 chữ số thập phân và bỏ 's' ---
+    // --- Format 2 chữ số thập phân +  ---
     function formatTimeDisplay(isoDate, startTime) {
       if (!startTime || !isoDate) return "0.00";
       const ts = new Date(isoDate).getTime();
@@ -509,7 +509,7 @@
     }
 
     function formatBuzzTime(isoDate, startTime) {
-      if (!startTime || !isoDate) return "0.00";
+      if (!startTime || !isoDate) return "0.000";
       const ts = new Date(isoDate).getTime();
       let diff = ts - startTime;
       if (diff < 0) diff = 0;
@@ -831,7 +831,7 @@
 
           // Bổ sung ô tích chọn "Giới hạn thời gian không?"
           const timeLimitLabel = document.createElement("label");
-          timeLimitLabel.innerHTML = `<input type="checkbox" class="add-time-limited-checkbox" data-duration-input-id="answerDuration" checked> <strong> G.Hạn? </strong>`;
+          timeLimitLabel.innerHTML = `<input type="checkbox" class="add-time-limited-checkbox" data-duration-input-id="answerDuration" checked> <strong>G.Hạn?</strong>`;
           timeLimitLabel.style.whiteSpace = "nowrap";
           row.appendChild(timeLimitLabel);
 
@@ -1415,7 +1415,7 @@
           if (!currentRoom) return showPopup("Chưa có phòng để xuất!", "error");
           const wb = XLSX.utils.book_new();
 
-          const wsData1 = [["Tên", "Đáp án", "Thời gian"]];
+          const wsData1 = [["Tên", "Đáp án", "Thời gian (s)"]];
           const latestMap = new Map();
           answers.forEach(item => {
             const existing = latestMap.get(item.name);
@@ -1426,7 +1426,7 @@
           const ws1 = XLSX.utils.aoa_to_sheet(wsData1);
           XLSX.utils.book_append_sheet(wb, ws1, "DapAn");
 
-          const wsData2 = [["Tên", "Thời gian bấm"]];
+          const wsData2 = [["Tên", "Thời gian bấm (s)"]];
           const uniqueBuzzMap = new Map();
           [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
             .forEach(b => {
