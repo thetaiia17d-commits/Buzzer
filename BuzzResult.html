@@ -48,7 +48,7 @@
         #roomInfo {
             font-size: 1.2em;
             margin-top: 5px;
-            color:blue;
+            color: blue;
         }
     </style>
 </head>
@@ -57,7 +57,7 @@
 
     <div id="headerContainer">
         <h1 style="margin:0;">THỨ TỰ BẤM CHUÔNG</h1>
-        <div id="roomInfo">Đang tải thông tin phòng...</div>
+        <div id="roomInfo">Đang kiểm tra mã phòng...</div>
     </div>
 
     <div id="resultsContainer">
@@ -70,27 +70,32 @@
         var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmdnZWtuZXRpYWNlend2Z3h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0OTI0NzksImV4cCI6MjA4MDA2ODQ3OX0.mkrHJaOA2axmVx8o5M0AOoyiVdmIFyNdQMiQahSvdEU";
         var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+        // Lấy mã phòng trực tiếp từ tham số ?roomid=
         var urlParams = new URLSearchParams(window.location.search);
-        var roomCode = urlParams.get('room');
+        var roomCode = urlParams.get('roomid'); 
         
         var buzzStartTime = 0;
         var buzzList = [];
 
         async function fetchRoomInfo() {
             if (!roomCode) {
-                document.getElementById("roomInfo").innerText = "Lỗi: Thiếu mã phòng trên URL";
+                document.getElementById("roomInfo").innerText = "Lỗi: Không tìm thấy mã phòng (?roomid=...)";
                 return;
             }
-            const { data } = await supabase.from('rooms').select('*').eq('room_code', roomCode).single();
+            // Lấy thông tin phòng để xác định thời điểm Host mở chuông (buzz_open_time)
+            var { data } = await supabase.from('rooms').select('*').eq('room_code', roomCode).single();
             if (data) {
                 buzzStartTime = data.buzz_open_time ? new Date(data.buzz_open_time).getTime() : 0;
                 document.getElementById("roomInfo").innerText = "Phòng: " + roomCode;
+            } else {
+                document.getElementById("roomInfo").innerText = "Phòng " + roomCode + " không tồn tại!";
             }
         }
 
         async function fetchBuzzResults() {
             if (!roomCode) return;
-            const { data, error } = await supabase
+            // Lấy danh sách bấm chuông, sắp xếp theo thời gian ai bấm trước hiện trước
+            var { data, error } = await supabase
                 .from('buzzes')
                 .select('*')
                 .eq('room_code', roomCode)
@@ -106,19 +111,20 @@
 
         function formatBuzzTime(createdAt) {
             if (buzzStartTime === 0) return "";
-            const timeDiff = (new Date(createdAt).getTime() - buzzStartTime) / 1000;
+            var timeDiff = (new Date(createdAt).getTime() - buzzStartTime) / 1000;
+            // Nếu bấm trước khi Host mở (hiếm gặp do logic khóa chuông), vẫn hiện dấu cộng
             return "+" + timeDiff.toFixed(3) + "s";
         }
 
         function render() {
-            const container = document.getElementById("resultsContainer");
+            var container = document.getElementById("resultsContainer");
             if (buzzList.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color: gray;">Chưa có tín hiệu chuông...</div>';
                 return;
             }
 
-            container.innerHTML = buzzList.map((buzz, index) => {
-                const timeStr = formatBuzzTime(buzz.created_at);
+            container.innerHTML = buzzList.map(function(buzz, index) {
+                var timeStr = formatBuzzTime(buzz.created_at);
                 return `
                     <div class="result-row">
                         <span class="rank-name">${index + 1}. ${buzz.name}</span>
@@ -133,26 +139,26 @@
             await fetchBuzzResults();
 
             if (roomCode) {
-                // Lắng nghe thay đổi bảng buzzes
+                // Lắng nghe thời gian thực khi có người bấm chuông hoặc Reset chuông (bảng buzzes bị xóa)
                 supabase.channel('buzz_results_channel')
                     .on('postgres_changes', { 
                         event: '*', 
                         schema: 'public', 
                         table: 'buzzes', 
                         filter: `room_code=eq.${roomCode}` 
-                    }, (payload) => {
+                    }, function(payload) {
                         fetchBuzzResults();
                     })
                     .subscribe();
 
-                // Lắng nghe thay đổi bảng rooms
+                // Lắng nghe khi Host mở chuông lần tiếp theo (cập nhật buzzStartTime mới)
                 supabase.channel('room_update_channel')
                     .on('postgres_changes', { 
                         event: 'UPDATE', 
                         schema: 'public', 
                         table: 'rooms', 
                         filter: `room_code=eq.${roomCode}` 
-                    }, (payload) => {
+                    }, function(payload) {
                         if (payload.new.buzz_open_time) {
                             buzzStartTime = new Date(payload.new.buzz_open_time).getTime();
                         }
@@ -163,8 +169,10 @@
 
         init();
 
-        // Chặn chuột phải
-        document.addEventListener("contextmenu", (e) => e.preventDefault());
+        // Chặn menu chuột phải
+        document.addEventListener("contextmenu", function(e) {
+            e.preventDefault();
+        });
     </script>
 </body>
 
