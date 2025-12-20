@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Kết Quả Bấm Chuông</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            background-color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            font-weight: bold;
+        }
+
+        #headerContainer {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: yellow;
+            color: green;
+            text-align: center;
+            border-radius: 5px;
+        }
+
+        #resultsContainer {
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #fff;
+            min-height: 100px;
+        }
+
+        .result-row {
+            border-bottom: 1px dashed #eee;
+            padding: 12px 0;
+            font-size: 1.4em;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .rank-name {
+            color: black;
+        }
+
+        .buzz-time {
+            color: red;
+        }
+
+        #roomInfo {
+            font-size: 1.2em;
+            margin-top: 5px;
+            color:blue;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="headerContainer">
+        <h1 style="margin:0;">THỨ TỰ BẤM CHUÔNG</h1>
+        <div id="roomInfo">Đang tải thông tin phòng...</div>
+    </div>
+
+    <div id="resultsContainer">
+        <div style="text-align:center; color: purple;">Chưa có tín hiệu chuông...</div>
+    </div>
+
+    <script>
+        // CẤU HÌNH SUPABASE
+        var SUPABASE_URL = "https://rsvggeknetiacezwvgxy.supabase.co"; 
+        var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmdnZWtuZXRpYWNlend2Z3h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0OTI0NzksImV4cCI6MjA4MDA2ODQ3OX0.mkrHJaOA2axmVx8o5M0AOoyiVdmIFyNdQMiQahSvdEU";
+        var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        var urlParams = new URLSearchParams(window.location.search);
+        var roomCode = urlParams.get('room');
+        
+        var buzzStartTime = 0;
+        var buzzList = [];
+
+        async function fetchRoomInfo() {
+            if (!roomCode) {
+                document.getElementById("roomInfo").innerText = "Lỗi: Thiếu mã phòng trên URL";
+                return;
+            }
+            const { data } = await supabase.from('rooms').select('*').eq('room_code', roomCode).single();
+            if (data) {
+                buzzStartTime = data.buzz_open_time ? new Date(data.buzz_open_time).getTime() : 0;
+                document.getElementById("roomInfo").innerText = "Phòng: " + roomCode;
+            }
+        }
+
+        async function fetchBuzzResults() {
+            if (!roomCode) return;
+            const { data, error } = await supabase
+                .from('buzzes')
+                .select('*')
+                .eq('room_code', roomCode)
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.error("Lỗi lấy dữ liệu chuông:", error);
+                return;
+            }
+            buzzList = data;
+            render();
+        }
+
+        function formatBuzzTime(createdAt) {
+            if (buzzStartTime === 0) return "";
+            const timeDiff = (new Date(createdAt).getTime() - buzzStartTime) / 1000;
+            return "+" + timeDiff.toFixed(3) + "s";
+        }
+
+        function render() {
+            const container = document.getElementById("resultsContainer");
+            if (buzzList.length === 0) {
+                container.innerHTML = '<div style="text-align:center; color: gray;">Chưa có tín hiệu chuông...</div>';
+                return;
+            }
+
+            container.innerHTML = buzzList.map((buzz, index) => {
+                const timeStr = formatBuzzTime(buzz.created_at);
+                return `
+                    <div class="result-row">
+                        <span class="rank-name">${index + 1}. ${buzz.name}</span>
+                        <span class="buzz-time">${timeStr}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function init() {
+            await fetchRoomInfo();
+            await fetchBuzzResults();
+
+            if (roomCode) {
+                // Lắng nghe thay đổi bảng buzzes
+                supabase.channel('buzz_results_channel')
+                    .on('postgres_changes', { 
+                        event: '*', 
+                        schema: 'public', 
+                        table: 'buzzes', 
+                        filter: `room_code=eq.${roomCode}` 
+                    }, (payload) => {
+                        fetchBuzzResults();
+                    })
+                    .subscribe();
+
+                // Lắng nghe thay đổi bảng rooms
+                supabase.channel('room_update_channel')
+                    .on('postgres_changes', { 
+                        event: 'UPDATE', 
+                        schema: 'public', 
+                        table: 'rooms', 
+                        filter: `room_code=eq.${roomCode}` 
+                    }, (payload) => {
+                        if (payload.new.buzz_open_time) {
+                            buzzStartTime = new Date(payload.new.buzz_open_time).getTime();
+                        }
+                    })
+                    .subscribe();
+            }
+        }
+
+        init();
+
+        // Chặn chuột phải
+        document.addEventListener("contextmenu", (e) => e.preventDefault());
+    </script>
+</body>
+
+</html>
