@@ -311,7 +311,7 @@
         async function syncServerTime() {
             if (!myRoom) return;
             const tempName = "SYNC_" + Math.random().toString(36).substring(7);
-            const { data } = await supabase.from('participants').insert([{ room_code: myRoom, name: tempName, role: 'contestant' }]).select().single();
+            const { data } = await supabase.from('participants').insert([{ room_code: myRoom, name: tempName, role: 'contestant' }]).select().maybeSingle();
             if (data) {
                 const serverTs = new Date(data.created_at).getTime();
                 const localTs = Date.now();
@@ -393,7 +393,7 @@
         }
 
         async function fetchMyLastAnswer() {
-            const { data } = await supabase.from('answers').select('*').eq('room_code', myRoom).eq('name', myName).order('created_at', { ascending: false }).limit(1).single();
+            const { data } = await supabase.from('answers').select('*').eq('room_code', myRoom).eq('name', myName).order('created_at', { ascending: false }).limit(1).maybeSingle();
             if (data) {
                 const timeDiff = formatTimeDisplay(data.created_at, currentAnswerStartTime);
                 answerStatusBox.innerText = `Bạn đã trả lời "${data.answer_text}" ở ${timeDiff}`;
@@ -444,7 +444,7 @@
                     return showPopup("Vị trí phải từ 1 đến 100", "error");
                 }
             }
-            const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).single();
+            const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).maybeSingle();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
             const { data: existingUser } = await supabase.from('participants').select('id').eq('room_code', code).eq('name', name).maybeSingle();
