@@ -556,32 +556,28 @@
       const sB = document.getElementById("statusBuzz");
       if (!sA || !sB || !roomInfo) return;
 
-      if (roomInfo.answer_status === 'locked' || lockedAnswer === true) {
+      // UI Đáp án
+      if (roomInfo.answer_status === 'locked') {
         sA.className = "status-box locked";
         sA.innerText = "Đáp án: 🔒 Đang khóa";
-        lockedAnswer = true;
       } else if (roomInfo.answer_status === 'pending_open') {
-        sA.className = "status-box locked";
-        sA.innerText = "Đáp án: ⏱️ Chờ đồng bộ";
-        lockedAnswer = true;
-      } else if (roomInfo.answer_status === 'open') {
+        sA.className = "status-box locked"; // Để màu cam/đỏ nhưng vẫn cho phép timer chạy
+        sA.innerText = "Đáp án: ⏱️ Đang đồng bộ";
+      } else {
         sA.className = "status-box open";
         sA.innerText = "Đáp án: 🔓 Đang mở";
-        lockedAnswer = false;
       }
 
-      if (roomInfo.buzz_status === 'locked' || lockedBuzz === true) {
+      // UI Chuông
+      if (roomInfo.buzz_status === 'locked') {
         sB.className = "status-box locked";
         sB.innerText = "Chuông: 🚫 Đang khóa";
-        lockedBuzz = true;
       } else if (roomInfo.buzz_status === 'pending_open') {
         sB.className = "status-box locked";
-        sB.innerText = "Chuông: ⏱️ Chờ đồng bộ";
-        lockedBuzz = true;
-      } else if (roomInfo.buzz_status === 'open') {
+        sB.innerText = "Chuông: ⏱️ Đang đồng bộ";
+      } else {
         sB.className = "status-box open";
         sB.innerText = "Chuông: 🔔 Đang mở";
-        lockedBuzz = false;
       }
     }
 
@@ -1024,46 +1020,45 @@
     }
 
     function handleRoomUpdate(room) {
-  roomInfo = room;
+      roomInfo = room;
 
-  // --- XỬ LÝ ĐÁP ÁN ---
-  const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-  // Nếu có mốc thời gian, Host phải nhận ngay để tính toán (tránh lỗi 0.000s)
-  if (room.answer_status === 'open' || (room.answer_status === 'pending_open' && newAnswerStartTime > 0)) {
-    answerStartTime = newAnswerStartTime;
-    answerDurationLimit = room.answer_duration || 0;
-    answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
-    
-    const currentServerTime = Date.now() + serverTimeOffset;
-    lockedAnswer = (answerDurationLimit > 0 && answerEndTime > 0 && answerEndTime <= currentServerTime);
-    fetchAnswers();
-  } else {
-    answerStartTime = 0;
-    lockedAnswer = true;
-    fetchAnswers();
-  }
+      // XỬ LÝ ĐÁP ÁN
+      const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
+      // Cho phép chạy đếm giờ nếu đã có mốc thời gian (kể cả khi đang pending_open)
+      if (room.answer_status === 'open' || (room.answer_status === 'pending_open' && newAnswerStartTime > 0)) {
+        answerStartTime = newAnswerStartTime;
+        answerDurationLimit = room.answer_duration || 0;
+        answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
 
-  // --- XỬ LÝ CHUÔNG ---
-  const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
-  const buzzDuration = room.buzz_duration || 0;
+        const currentServerTime = Date.now() + serverTimeOffset;
+        lockedAnswer = (answerDurationLimit > 0 && answerEndTime > 0 && answerEndTime <= currentServerTime);
+        fetchAnswers();
+      } else {
+        answerStartTime = 0;
+        lockedAnswer = true;
+        fetchAnswers();
+      }
 
-  // QUAN TRỌNG: Cập nhật buzzStartTime ngay khi có mốc thời gian từ DB
-  if (room.buzz_status === 'open' || (room.buzz_status === 'pending_open' && newBuzzStartTime > 0)) {
-    buzzStartTime = newBuzzStartTime;
-    buzzDurationLimit = buzzDuration;
-    buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+      // XỬ LÝ CHUÔNG
+      const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
+      const buzzDuration = room.buzz_duration || 0;
 
-    const currentServerTime = Date.now() + serverTimeOffset;
-    lockedBuzz = (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime);
-    fetchBuzz(); 
-  } else {
-    buzzStartTime = 0;
-    lockedBuzz = true;
-    fetchBuzz();
-  }
+      if (room.buzz_status === 'open' || (room.buzz_status === 'pending_open' && newBuzzStartTime > 0)) {
+        buzzStartTime = newBuzzStartTime;
+        buzzDurationLimit = buzzDuration;
+        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
 
-  updateUI();
-}
+        const currentServerTime = Date.now() + serverTimeOffset;
+        // Quan trọng: Chỉ khóa nếu thực sự hết giờ, không khóa khi đang chờ đồng bộ
+        lockedBuzz = (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime);
+        fetchBuzz();
+      } else {
+        buzzStartTime = 0;
+        lockedBuzz = true;
+        fetchBuzz();
+      }
+      updateUI();
+    }
 
     // --- REALTIME (Giữ nguyên) ---
     function subscribeRealtime() {
