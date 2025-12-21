@@ -501,16 +501,20 @@
     function formatTimeDisplay(isoDate, startTime) {
       if (!startTime || !isoDate) return "0.00";
       const ts = new Date(isoDate).getTime();
-      let diff = ts - startTime - 5000; // Trừ đi 5s bù đắp delay
+      let diff = ts - startTime;
       if (diff < 0) diff = 0;
+      // Dữ liệu 'created_at' bây giờ là thời điểm bấm thực tế từ client
+      // Nên diff chính xác là thời gian suy nghĩ của thí sinh (không kèm độ trễ mạng)
       return (diff / 1000).toFixed(2);
     }
 
     function formatBuzzTime(isoDate, startTime) {
-      if (!startTime || !isoDate) return "0.000s";
+      if (!startTime || !isoDate) return "0.000";
       const ts = new Date(isoDate).getTime();
-      let diff = ts - startTime - 5000; // Trừ đi 5s bù đắp delay
+      let diff = ts - startTime;
       if (diff < 0) diff = 0;
+      // Dữ liệu 'created_at' bây giờ là thời điểm bấm thực tế từ client
+      // Nên diff chính xác là thời gian suy nghĩ của thí sinh (không kèm độ trễ mạng)
       return (diff / 1000).toFixed(3) + "s";
     }
 
@@ -917,7 +921,7 @@
 
           if (isValid) {
             // Tính created_at dựa trên thời gian mở phòng và thời gian trả lời thủ công
-            const durationMs = Math.floor((timeInSeconds + 5) * 1000); // Thêm +5 vào đây
+            const durationMs = Math.floor(timeInSeconds * 1000);
             const created_at_ms = answerStartTime + durationMs;
 
             recordsToInsert.push({
@@ -1438,8 +1442,7 @@
         unlockAnswersLimited.onclick = () => {
           const duration = parseFloat(answerDurationInput ? answerDurationInput.value : 0);
           if (duration <= 0) return showPopup("Thời gian mở đáp án phải lớn hơn 0!", "error");
-          // Cộng thêm 5 giây vào logic để bù đắp phần bị mất
-          updateRoomStatus('open', duration + 5, true);
+          updateRoomStatus('open', duration, true);
         };
       }
 
@@ -1463,8 +1466,7 @@
         unlockBuzzLimited.onclick = () => {
           const duration = parseFloat(buzzDurationInput ? buzzDurationInput.value : 0);
           if (duration <= 0) return showPopup("Thời gian mở chuông phải lớn hơn 0!", "error");
-          // Cộng thêm 5 giây vào logic để bù đắp phần bị mất
-          updateRoomStatus('open', duration + 5, false);
+          updateRoomStatus('open', duration, false);
         };
       }
 

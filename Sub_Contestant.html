@@ -325,7 +325,7 @@
         function formatTimeDisplay(isoDate, startTimeMs) {
             if (!startTimeMs || !isoDate) return "0.000s";
             const ts = new Date(isoDate).getTime();
-            let diff = ts - startTimeMs - 5000; // Trừ đi 5s bù đắp delay
+            let diff = ts - startTimeMs;
             if (diff < 0) diff = 0;
             return (diff / 1000).toFixed(3) + "s";
         }
@@ -413,7 +413,7 @@
             if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
             if (!startTimeISO || duration <= 0) { el.innerText = "--.--s"; return; }
             const sharedStartTime = new Date(startTimeISO).getTime();
-            const localEndTime = sharedStartTime + (duration * 1000);
+            const localEndTime = sharedStartTime + (duration * 1000) + 5000;
             const update = () => {
                 const now = getServerTimeNow();
                 let remain = localEndTime - now;
