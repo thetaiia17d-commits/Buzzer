@@ -309,15 +309,11 @@
         function getServerTimeNow() { return Date.now() + serverTimeOffset; }
 
         async function syncServerTime() {
-            if (!myRoom) return;
-            // Dùng hàm RPC để sạch database hoặc dùng cách insert tạm thời
-            const tempName = "SYNC_" + Math.random().toString(36).substring(7);
-            const { data } = await supabase.from('participants').insert([{ room_code: myRoom, name: tempName, role: 'contestant' }]).select().maybeSingle();
+            const { data, error } = await supabase.rpc('get_server_time');
             if (data) {
-                const serverTs = new Date(data.created_at).getTime();
+                const serverTs = new Date(data).getTime();
                 const localTs = Date.now();
                 serverTimeOffset = serverTs - localTs;
-                await supabase.from('participants').delete().eq('id', data.id);
             }
         }
 
@@ -406,56 +402,56 @@
         }
 
         function startTimer(elementId, startTimeISO, duration, callbackEnd) {
-    const el = document.getElementById(elementId);
-    
-    // Reset interval cũ nếu đang chạy để tránh bị nhảy số (chồng chéo timer)
-    if (elementId === 'answerCountdown' && answerInterval) clearInterval(answerInterval);
-    if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
-    
-    // Nếu không có thời gian bắt đầu hoặc duration bằng 0, hiển thị mặc định
-    if (!startTimeISO || duration <= 0) { 
-        el.innerText = "--.--s"; 
-        return; 
-    }
-    
-    // QUAN TRỌNG: Lấy mốc thời gian bắt đầu từ Server (đã được Host ghi vào DB)
-    const startTimeServer = new Date(startTimeISO).getTime();
-    const durationMs = duration * 1000;
-    const endTimeServer = startTimeServer + durationMs;
-    
-    const update = () => {
-        // BÙ TRỪ ĐỘ TRỄ:
-        // Giờ máy con hiện tại + serverTimeOffset = Giờ chuẩn của Server ngay lúc này
-        const nowServer = Date.now() + serverTimeOffset;
-        
-        let remain = endTimeServer - nowServer;
-        
-        if (remain <= 0) {
-            el.innerText = "0.000s";
-            if (elementId === 'answerCountdown') {
-                clearInterval(answerInterval);
-                answerInterval = null;
-            }
-            if (elementId === 'buzzCountdown') {
-                clearInterval(buzzInterval);
-                buzzInterval = null;
-            }
-            if (callbackEnd) callbackEnd();
-        } else {
-            // Hiển thị 3 chữ số thập phân để thí sinh thấy độ chính xác cực cao
-            el.innerText = (remain / 1000).toFixed(3) + "s";
-        }
-    };
+            const el = document.getElementById(elementId);
 
-    // Chạy cập nhật ngay lập tức phát đầu tiên để tránh bị lag 1s đầu
-    update();
-    
-    // Cập nhật mỗi 30ms (khoảng 33 khung hình/giây) để nhìn số nhảy mượt mà
-    const interval = setInterval(update, 30);
-    
-    if (elementId === 'answerCountdown') answerInterval = interval;
-    if (elementId === 'buzzCountdown') buzzInterval = interval;
-}
+            // Reset interval cũ nếu đang chạy để tránh bị nhảy số (chồng chéo timer)
+            if (elementId === 'answerCountdown' && answerInterval) clearInterval(answerInterval);
+            if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
+
+            // Nếu không có thời gian bắt đầu hoặc duration bằng 0, hiển thị mặc định
+            if (!startTimeISO || duration <= 0) {
+                el.innerText = "--.--s";
+                return;
+            }
+
+            // QUAN TRỌNG: Lấy mốc thời gian bắt đầu từ Server (đã được Host ghi vào DB)
+            const startTimeServer = new Date(startTimeISO).getTime();
+            const durationMs = duration * 1000;
+            const endTimeServer = startTimeServer + durationMs;
+
+            const update = () => {
+                // BÙ TRỪ ĐỘ TRỄ:
+                // Giờ máy con hiện tại + serverTimeOffset = Giờ chuẩn của Server ngay lúc này
+                const nowServer = Date.now() + serverTimeOffset;
+
+                let remain = endTimeServer - nowServer;
+
+                if (remain <= 0) {
+                    el.innerText = "0.000s";
+                    if (elementId === 'answerCountdown') {
+                        clearInterval(answerInterval);
+                        answerInterval = null;
+                    }
+                    if (elementId === 'buzzCountdown') {
+                        clearInterval(buzzInterval);
+                        buzzInterval = null;
+                    }
+                    if (callbackEnd) callbackEnd();
+                } else {
+                    // Hiển thị 3 chữ số thập phân để thí sinh thấy độ chính xác cực cao
+                    el.innerText = (remain / 1000).toFixed(3) + "s";
+                }
+            };
+
+            // Chạy cập nhật ngay lập tức phát đầu tiên để tránh bị lag 1s đầu
+            update();
+
+            // Cập nhật mỗi 30ms (khoảng 33 khung hình/giây) để nhìn số nhảy mượt mà
+            const interval = setInterval(update, 30);
+
+            if (elementId === 'answerCountdown') answerInterval = interval;
+            if (elementId === 'buzzCountdown') buzzInterval = interval;
+        }
 
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
@@ -470,21 +466,21 @@
 
             const { data: existingUser } = await supabase.from('participants').select('id').eq('room_code', code).eq('name', name).maybeSingle();
             if (existingUser) return showPopup("Tên này đã có người dùng trong phòng!", "error");
-            
+
             await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
                 role: 'contestant',
-                position: posValue 
+                position: posValue
             }]);
 
             myRoom = code; myName = name;
             loginArea.style.display = "none"; gameArea.style.display = "flex";
             answerStatusBox.style.display = "block"; resetAnswerStatusBox();
-            
-            await syncServerTime(); 
-            await fetchBuzzList(); 
-            handleRoomUpdate(room); 
+
+            await syncServerTime();
+            await fetchBuzzList();
+            handleRoomUpdate(room);
             subscribeRealtime();
         };
 
@@ -492,45 +488,72 @@
             if (lockedAnswer) return showPopup("Đang khóa!", "error");
             const text = answerInput.value.trim();
             if (!text) { answerInput.focus(); return showPopup("Chưa nhập đáp án!", "error"); }
-            btnSend.disabled = true;
+
+            btnSend.disabled = true; // Chặn bấm ngay lập tức
             const clientTimeISO = new Date(getServerTimeNow()).toISOString();
-            const { error } = await supabase.from('answers').insert([{ room_code: myRoom, name: myName, answer_text: text, created_at: clientTimeISO }]);
+
+            const { error } = await supabase.from('answers').upsert({
+                room_code: myRoom,
+                name: myName,
+                answer_text: text,
+                created_at: clientTimeISO
+            }, { onConflict: 'room_code, name' });
+
             if (!error) {
                 const timeDiff = formatTimeDisplay(clientTimeISO, currentAnswerStartTime);
                 answerStatusBox.innerText = `Bạn đã trả lời "${text}" ở ${timeDiff}`;
-                answerInput.value = ""; showPopup("Đã gửi đáp án!");
+                answerInput.value = "";
+                showPopup("Đã gửi đáp án!");
+                // Chỉ mở lại nút nếu Host chưa khóa đáp án
                 setTimeout(() => { if (!lockedAnswer) btnSend.disabled = false; }, 500);
-            } else { showPopup("Lỗi gửi: " + error.message, "error"); btnSend.disabled = false; }
+            } else {
+                showPopup("Lỗi gửi: " + error.message, "error");
+                btnSend.disabled = false; // Lỗi thì cho gửi lại
+            }
             answerInput.focus();
         };
 
         btnBuzz.onclick = async () => {
+            // Nếu đang bị khóa hoặc đã bấm rồi thì thoát
             if (lockedBuzz || hasBuzzed) { answerInput.focus(); return; }
-            hasBuzzed = true; updateBuzzUI(true);
+
+            btnBuzz.disabled = true; // Chặn click ngay lập tức để tránh gửi trùng
             const clientTimeISO = new Date(getServerTimeNow()).toISOString();
-            const { error } = await supabase.from('buzzes').insert([{ room_code: myRoom, name: myName, created_at: clientTimeISO }]);
-            if (error) { hasBuzzed = false; updateBuzzUI(false); showPopup("Lỗi: " + error.message, "error"); }
-            else { showPopup("Đã bấm chuông!", "success"); }
+
+            const { error } = await supabase.from('buzzes').upsert({
+                room_code: myRoom,
+                name: myName,
+                created_at: clientTimeISO
+            }, { onConflict: 'room_code, name' });
+
+            if (error) {
+                showPopup("Lỗi: " + error.message, "error");
+                btnBuzz.disabled = false; // Lỗi mạng thì cho bấm lại
+            } else {
+                hasBuzzed = true;
+                updateBuzzUI(true); // Hàm này sẽ đổi màu nút và khóa hẳn btnBuzz
+                showPopup("Đã bấm chuông!", "success");
+            }
             answerInput.focus();
         };
 
         function subscribeRealtime() {
             if (roomChannel) supabase.removeChannel(roomChannel);
             if (buzzesChannel) supabase.removeChannel(buzzesChannel);
-            
+
             roomChannel = supabase.channel('room-' + myRoom);
-            roomChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${myRoom}` }, async (payload) => { 
-                handleRoomUpdate(payload.new); 
+            roomChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${myRoom}` }, async (payload) => {
+                handleRoomUpdate(payload.new);
             })
-            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'answers', filter: `room_code=eq.${myRoom}` }, () => {
-                resetAnswerStatusBox();
-                showPopup("Host đã reset đáp án!");
-            })
-            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { 
-                hasBuzzed = false; buzzOrder = []; renderBuzzTable(); updateBuzzUI(lockedBuzz); 
-                showPopup("Host đã reset chuông!"); if (!lockedAnswer) answerInput.focus(); 
-            })
-            .subscribe();
+                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'answers', filter: `room_code=eq.${myRoom}` }, () => {
+                    resetAnswerStatusBox();
+                    showPopup("Host đã reset đáp án!");
+                })
+                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => {
+                    hasBuzzed = false; buzzOrder = []; renderBuzzTable(); updateBuzzUI(lockedBuzz);
+                    showPopup("Host đã reset chuông!"); if (!lockedAnswer) answerInput.focus();
+                })
+                .subscribe();
 
             buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); }).subscribe();
         }
