@@ -365,15 +365,27 @@
         function renderBuzzTable() {
             tblBuzzBody.innerHTML = "";
             if (!buzzOrder || buzzOrder.length === 0) return;
-            const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            // Sắp xếp theo thời gian, nếu trùng thì sắp xếp theo tên để đảm bảo vị trí không bị nhảy
+            const sorted = [...buzzOrder].sort((a, b) => {
+                const timeA = new Date(a.created_at).getTime();
+                const timeB = new Date(b.created_at).getTime();
+                if (timeA !== timeB) return timeA - timeB;
+                return a.name.localeCompare(b.name); // Tiêu chí phụ: Tên
+            });
+
             const uniqueBuzzMap = new Map();
-            sorted.forEach(item => { if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item); });
+            sorted.forEach(item => {
+                if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item);
+            });
+
             Array.from(uniqueBuzzMap.values()).forEach(item => {
                 const row = tblBuzzBody.insertRow();
                 const cellName = row.insertCell();
                 cellName.innerText = item.name;
                 const cellTime = row.insertCell();
                 cellTime.innerText = formatTimeDisplay(item.created_at, currentBuzzStartTime);
+
                 if (item.name === myName) {
                     cellName.style.background = "red"; cellName.style.color = "white";
                     cellTime.style.background = "red"; cellTime.style.color = "white";
@@ -382,11 +394,18 @@
         }
 
         async function fetchBuzzList() {
-            const { data } = await supabase.from('buzzes').select('*').eq('room_code', myRoom);
+            // Thêm .order() để server trả về danh sách có thứ tự sẵn
+            const { data } = await supabase.from('buzzes')
+                .select('*')
+                .eq('room_code', myRoom)
+                .order('created_at', { ascending: true });
+
             if (data) {
                 buzzOrder = data;
                 if (data.some(b => b.name === myName) && !hasBuzzed) {
-                    hasBuzzed = true; updateBuzzUI(lockedBuzz); showPopup("Đã bấm chuông!");
+                    hasBuzzed = true;
+                    updateBuzzUI(lockedBuzz);
+                    showPopup("Đã bấm chuông!");
                 }
                 renderBuzzTable();
             }
@@ -540,7 +559,12 @@
                 updateBuzzUI(false); showPopup("Host đã reset chuông!"); return;
             }
             if (roomData.buzz_status === 'open') {
-                updateBuzzUI(false); startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
+                const newStartTime = new Date(roomData.buzz_open_time).getTime();
+                if (currentBuzzStartTime !== newStartTime) {
+                    currentBuzzStartTime = newStartTime;
+                    startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
+                }
+                updateBuzzUI(false);
             } else {
                 updateBuzzUI(true); document.getElementById('buzzCountdown').innerText = "0.000s";
                 if (buzzInterval) clearInterval(buzzInterval);

@@ -697,13 +697,18 @@
     function renderBuzz() {
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
-      const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      // Sắp xếp ổn định: Thời gian -> Tên
+      const sorted = [...buzzOrder].sort((a, b) => {
+        const tA = new Date(a.created_at).getTime();
+        const tB = new Date(b.created_at).getTime();
+        if (tA !== tB) return tA - tB;
+        return a.name.localeCompare(b.name);
+      });
 
       const uniqueBuzzMap = new Map();
       sorted.forEach(item => {
-        if (!uniqueBuzzMap.has(item.name)) {
-          uniqueBuzzMap.set(item.name, item);
-        }
+        if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item);
       });
 
       Array.from(uniqueBuzzMap.values()).forEach(item => {
@@ -997,8 +1002,16 @@
     }
 
     async function fetchBuzz() {
-      const { data } = await supabase.from('buzzes').select('*').eq('room_code', currentRoom);
-      if (data) { buzzOrder = data; renderBuzz(); }
+      const { data } = await supabase
+        .from('buzzes')
+        .select('*')
+        .eq('room_code', currentRoom)
+        .order('created_at', { ascending: true }); // Thêm dòng này để cố định thứ tự từ database
+
+      if (data) {
+        buzzOrder = data;
+        renderBuzz();
+      }
     }
 
     async function fetchUsers() {
