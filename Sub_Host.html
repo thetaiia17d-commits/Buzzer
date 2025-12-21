@@ -472,9 +472,6 @@
     let answerDurationInput = null;
     let buzzDurationInput = null;
 
-    let hostLastBuzzTime = null;
-    let hostLastAnsTime = null;
-
     // --- UTILS ---
     function showPopup(message, type = "success") {
       const popup = document.getElementById("popupMessage");
@@ -700,18 +697,13 @@
     function renderBuzz() {
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
-
-      // Sắp xếp ổn định: Thời gian -> Tên
-      const sorted = [...buzzOrder].sort((a, b) => {
-        const tA = new Date(a.created_at).getTime();
-        const tB = new Date(b.created_at).getTime();
-        if (tA !== tB) return tA - tB;
-        return a.name.localeCompare(b.name);
-      });
+      const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
       const uniqueBuzzMap = new Map();
       sorted.forEach(item => {
-        if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item);
+        if (!uniqueBuzzMap.has(item.name)) {
+          uniqueBuzzMap.set(item.name, item);
+        }
       });
 
       Array.from(uniqueBuzzMap.values()).forEach(item => {
@@ -1005,52 +997,8 @@
     }
 
     async function fetchBuzz() {
-      if (!currentRoom) return;
-      const { data } = await supabase
-        .from('buzzes')
-        .select('*')
-        .eq('room_code', currentRoom)
-        .order('created_at', { ascending: true }); // Sắp xếp theo thời gian tại Server
-
-      if (data) {
-        // Lọc trùng: Chỉ lấy lượt bấm đầu tiên của mỗi người
-        const unique = [];
-        const names = new Set();
-        for (const item of data) {
-          if (!names.has(item.name)) {
-            names.add(item.name);
-            unique.push(item);
-          }
-        }
-        buzzOrder = unique;
-        renderBuzz();
-      }
-    }
-
-    // Cập nhật logic trong renderBuzz (nếu chưa có):
-    function renderBuzz() {
-      if (!tblBuzzBody) return;
-      tblBuzzBody.innerHTML = "";
-
-      // Sắp xếp ổn định: Ưu tiên thời gian, sau đó đến Tên để tránh nhảy vị trí
-      const sorted = [...buzzOrder].sort((a, b) => {
-        const tA = new Date(a.created_at).getTime();
-        const tB = new Date(b.created_at).getTime();
-        if (tA !== tB) return tA - tB;
-        return a.name.localeCompare(b.name);
-      });
-
-      const uniqueBuzzMap = new Map();
-      sorted.forEach(item => {
-        if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item);
-      });
-
-      Array.from(uniqueBuzzMap.values()).forEach(item => {
-        const row = tblBuzzBody.insertRow();
-        row.insertCell().innerText = item.name;
-        // buzzStartTime ở đây phải là mốc cố định khi Host bấm "Mở chuông"
-        row.insertCell().innerText = formatBuzzTime(item.created_at, buzzStartTime);
-      });
+      const { data } = await supabase.from('buzzes').select('*').eq('room_code', currentRoom);
+      if (data) { buzzOrder = data; renderBuzz(); }
     }
 
     async function fetchUsers() {
@@ -1211,68 +1159,69 @@
       });
     }
 
-    // Cập nhật hàm updateRoomStatus
-    async function updateRoomStatus(status, duration, isAnswer) {
-    if (!currentRoom) return;
-
-    const currentStatus = isAnswer ? roomInfo.answer_status : roomInfo.buzz_status;
-    const currentTime = isAnswer ? roomInfo.answer_open_time : roomInfo.buzz_open_time;
-
-    let updateObj = {};
-    if (isAnswer) {
-        updateObj = { answer_status: status, answer_duration: duration };
-        if (status === 'open') {
-            // Nếu đang mở rồi thì giữ nguyên mốc cũ, chỉ cấp mốc mới nếu đang Khóa
-            updateObj.answer_open_time = (currentStatus === 'open' && currentTime) ? currentTime : getServerTimeNowISO();
-        } else {
-            updateObj.answer_open_time = null;
-        }
-    } else {
-        updateObj = { buzz_status: status, buzz_duration: duration };
-        if (status === 'open') {
-            updateObj.buzz_open_time = (currentStatus === 'open' && currentTime) ? currentTime : getServerTimeNowISO();
-        } else {
-            updateObj.buzz_open_time = null;
-        }
-    }
-
-    await supabase.from('rooms').update(updateObj).eq('room_code', currentRoom);
-}
-
-    // Cập nhật hàm resetRoomData
-    // --- HÀM RESET DỮ LIỆU (Đã gộp và tối ưu hóa) ---
-    async function resetRoomData(isAnswer) {
+    // 1. Hàm cập nhật trạng thái (Mở/Khóa)
+async function updateRoomStatus(status, duration, isAnswer) {
     if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
 
-    const table = isAnswer ? 'answers' : 'buzzes';
-    
-    // 1. Xóa dữ liệu người bấm
-    const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
-    if (dataError) return showPopup("Lỗi reset dữ liệu!", "error");
+    const statusField = isAnswer ? 'answer_status' : 'buzz_status';
+    const timeField = isAnswer ? 'answer_open_time' : 'buzz_open_time';
+    const durationField = isAnswer ? 'answer_duration' : 'buzz_duration';
 
-    // 2. Cập nhật giao diện Host local ngay lập tức
-    if (isAnswer) { answers = []; renderAnswers(); } 
-    else { buzzOrder = []; renderBuzz(); }
+    let updateData = {};
+    if (status === 'open') {
+        // Khi bấm MỞ: Host ấn định luôn thời gian bắt đầu
+        updateData[statusField] = 'open';
+        updateData[timeField] = new Date().toISOString(); 
+        updateData[durationField] = duration;
 
-    // 3. Logic lượt mới (Gộp tất cả vào 1 lần gửi duy nhất)
-    let updateObj = {};
-    if (isAnswer) {
-        // Đáp án: Reset xong là Khóa (Chỉ tính 1 lượt)
-        updateObj = { answer_status: 'locked', answer_open_time: null, answer_duration: 0 };
+        // Xóa sạch dữ liệu cũ của lượt trước
+        const table = isAnswer ? 'answers' : 'buzzes';
+        await supabase.from(table).delete().eq('room_code', currentRoom);
+        showPopup(isAnswer ? "Đã mở đáp án!" : "Đã mở chuông!");
     } else {
-        // Chuông:
-        if (roomInfo.buzz_duration === 0 && roomInfo.buzz_status === 'open') {
-            // MỞ VĨNH VIỄN: Cấp thời gian mới -> Thí sinh hiểu là lượt mới và được bấm lại
-            updateObj = { buzz_open_time: getServerTimeNowISO() };
-        } else {
-            // MỞ GIỚI HẠN: Khóa lại (Tính là xong 1 lượt)
-            updateObj = { buzz_status: 'locked', buzz_open_time: null };
-        }
+        // Khi bấm KHÓA
+        updateData[statusField] = 'locked';
+        showPopup(isAnswer ? "Đã khóa đáp án!" : "Đã khóa chuông!");
     }
 
-    // Lệnh Update duy nhất này giúp dứt điểm lỗi nhảy thời gian
-    await supabase.from('rooms').update(updateObj).eq('room_code', currentRoom);
-    showPopup("Đã Reset hoàn tất!");
+    const { error } = await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
+    if (error) console.error("Lỗi cập nhật:", error.message);
+}
+
+// 2. Hàm Reset dữ liệu (Theo yêu cầu logic của bạn)
+async function resetRoomData(isAnswer) {
+    if (!currentRoom || !roomInfo) return showPopup("Chưa vào phòng!", "error");
+
+    const table = isAnswer ? 'answers' : 'buzzes';
+    const statusField = isAnswer ? 'answer_status' : 'buzz_status';
+    const timeField = isAnswer ? 'answer_open_time' : 'buzz_open_time';
+
+    // 1. Xóa sạch danh sách trong Database (buzzes hoặc answers)
+    const { error: deleteError } = await supabase.from(table).delete().eq('room_code', currentRoom);
+    if (deleteError) return showPopup("Lỗi xóa dữ liệu!", "error");
+
+    const duration = isAnswer ? roomInfo.answer_duration : roomInfo.buzz_duration;
+    let updateData = {};
+
+    if (duration === 0) {
+        // LOGIC VĨNH VIỄN: Tính lượt mới -> Cập nhật thời gian mới
+        updateData[statusField] = 'open';
+        updateData[timeField] = new Date().toISOString(); 
+    } else {
+        // LOGIC GIỚI HẠN: Giữ nguyên lượt cũ -> Không đổi thời gian
+        // Nhưng PHẢI cập nhật lại trạng thái để kích hoạt Realtime cho Thí sinh
+        updateData[statusField] = 'open'; 
+        // Mẹo: Cập nhật lại chính nó để Supabase gửi thông báo "Update" tới Thí sinh
+    }
+
+    // 2. Cập nhật bảng Rooms để tất cả Thí sinh nhận được lệnh làm mới danh sách
+    await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
+
+    // 3. Cập nhật giao diện Host ngay lập tức
+    if (isAnswer) { answers = []; renderAnswers(); } 
+    else { buzzOrder = []; renderBuzz(); }
+    
+    showPopup(isAnswer ? "Đã Reset Đáp án!" : "Đã Reset Chuông!");
 }
 
     window.onload = () => {
