@@ -413,7 +413,7 @@
             if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
             if (!startTimeISO || duration <= 0) { el.innerText = "--.--s"; return; }
             const sharedStartTime = new Date(startTimeISO).getTime();
-            const localEndTime = sharedStartTime + (duration * 1000) + 5000;
+            const localEndTime = sharedStartTime + (duration * 1000);
             const update = () => {
                 const now = getServerTimeNow();
                 let remain = localEndTime - now;
