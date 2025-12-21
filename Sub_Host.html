@@ -1024,13 +1024,11 @@
     }
 
     function handleRoomUpdate(room) {
-      const oldAnswerStartTime = answerStartTime;
-      const oldBuzzStartTime = buzzStartTime;
       roomInfo = room;
 
       // --- XỬ LÝ ĐÁP ÁN ---
       const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-      // SỬA: Chấp nhận cả pending_open để lấy mốc thời gian
+      // Chấp nhận cả trạng thái pending_open để đồng bộ mốc thời gian ngay lập tức
       if (room.answer_status === 'open' || room.answer_status === 'pending_open') {
         answerStartTime = newAnswerStartTime;
         answerDurationLimit = room.answer_duration || 0;
@@ -1050,8 +1048,8 @@
       const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
       const buzzDuration = room.buzz_duration || 0;
 
-      // SỬA QUAN TRỌNG: Host phải cập nhật buzzStartTime ngay cả khi là pending_open
-      // Điều này giúp hàm tính toán (formatBuzzTime) không bị trừ cho 0 -> tránh lỗi 0.000s
+      // QUAN TRỌNG: Cập nhật buzzStartTime kể cả khi đang ở trạng thái pending_open
+      // Điều này giúp tránh lỗi thời gian 0.000s vì Host đã có mốc để trừ
       if (room.buzz_status === 'open' || room.buzz_status === 'pending_open') {
         buzzStartTime = newBuzzStartTime;
         buzzDurationLimit = buzzDuration;
@@ -1063,13 +1061,12 @@
         fetchBuzz();
       } else {
         buzzStartTime = 0;
-        buzzDurationLimit = buzzDuration;
         buzzEndTime = 0;
         lockedBuzz = true;
         fetchBuzz();
       }
 
-      updateUI();
+      updateUI(); // Cập nhật giao diện Host
     }
 
     // --- REALTIME (Giữ nguyên) ---
