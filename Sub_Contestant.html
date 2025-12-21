@@ -481,49 +481,38 @@
         };
 
         btnSend.onclick = async () => {
-            if (lockedAnswer) return showPopup("Đang khóa!", "error");
+    if (lockedAnswer) return showPopup("Đang khóa!", "error");
+    const text = answerInput.value.trim();
+    if (!text) { answerInput.focus(); return showPopup("Chưa nhập đáp án!", "error"); }
 
-            const text = answerInput.value.trim();
-            if (!text) { answerInput.focus(); return showPopup("Chưa nhập đáp án!", "error"); }
+    btnSend.disabled = true;
+    const nowSyncedMs = Date.now() + serverTimeOffset;
+    const startTimeMs = new Date(currentAnswerStartTime).getTime();
+    const elapsed = Math.max(0, (nowSyncedMs - startTimeMs) / 1000);
+    const timeDisplay = elapsed.toFixed(3) + "s";
 
-            btnSend.disabled = true;
+    // Gửi bằng upsert. { onConflict: 'room_code,name' } phải khớp với Constraint ở Bước 1
+    const { error } = await supabase.from('answers').upsert([
+        { 
+            room_code: myRoom, 
+            name: myName, 
+            answer_text: text, 
+            created_at: new Date(nowSyncedMs).toISOString(),
+            elapsed_time: elapsed 
+        }
+    ], { onConflict: 'room_code,name' }); 
 
-            // 1. Lấy thời gian thực đã đồng bộ với Server
-            const nowSyncedMs = Date.now() + serverTimeOffset;
-            const clientTimeISO = new Date(nowSyncedMs).toISOString();
-
-            // 2. Tính toán thời gian phản hồi (Elapsed Time)
-            const startTimeMs = new Date(currentAnswerStartTime).getTime();
-            const elapsed = (nowSyncedMs - startTimeMs) / 1000;
-            const timeDisplay = elapsed.toFixed(3) + "s";
-
-            // 3. Gửi dữ liệu (Dùng upsert để ghi đè đáp án cũ của chính mình)
-            const { error } = await supabase.from('answers').upsert([
-                {
-                    room_code: myRoom,
-                    name: myName,
-                    answer_text: text,
-                    created_at: clientTimeISO,
-                    elapsed_time: elapsed // Giả sử bạn có cột này để Host hiện cho chính xác
-                }
-            ], { onConflict: 'room_code, name' });
-
-            if (!error) {
-                // Đóng băng hiển thị thời gian bằng con số vừa tính được
-                myRecordedAnswerTime = timeDisplay;
-                document.getElementById('answerCountdown').innerText = timeDisplay;
-
-                answerStatusBox.innerText = `Bạn đã trả lời "${text}" ở (${timeDisplay})`;
-                showPopup("Đã gửi đáp án!");
-
-                // Cho phép gửi lại sau 0.5s nếu chưa bị khóa
-                setTimeout(() => { if (!lockedAnswer) btnSend.disabled = false; }, 500);
-            } else {
-                showPopup("Lỗi gửi: " + error.message, "error");
-                btnSend.disabled = false;
-            }
-            answerInput.focus();
-        };
+    if (!error) {
+        myRecordedAnswerTime = timeDisplay; // Đóng băng hiển thị
+        document.getElementById('answerCountdown').innerText = timeDisplay;
+        answerStatusBox.innerText = `Đã gửi: "${text}" (${timeDisplay})`;
+        showPopup("Đã cập nhật đáp án!");
+        setTimeout(() => { if (!lockedAnswer) btnSend.disabled = false; }, 500);
+    } else {
+        showPopup("Lỗi gửi: " + error.message, "error");
+        btnSend.disabled = false;
+    }
+};
 
         btnBuzz.onclick = async () => {
             // Nếu đã bấm thành công trước đó hoặc Host đang khóa thì không cho bấm
