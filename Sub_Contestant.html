@@ -560,10 +560,13 @@
             }
             if (roomData.buzz_status === 'open') {
                 const newStartTime = new Date(roomData.buzz_open_time).getTime();
-                if (currentBuzzStartTime !== newStartTime) {
+
+                // CHỈ cập nhật nếu chưa có mốc thời gian HOẶC đây là một đợt mở chuông hoàn toàn mới (lệch trên 1 giây)
+                if (!currentBuzzStartTime || Math.abs(currentBuzzStartTime - newStartTime) > 1000) {
                     currentBuzzStartTime = newStartTime;
                     startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
                 }
+
                 updateBuzzUI(false);
             } else {
                 updateBuzzUI(true); document.getElementById('buzzCountdown').innerText = "0.000s";
