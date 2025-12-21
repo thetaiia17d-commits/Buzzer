@@ -1028,20 +1028,45 @@
       const oldBuzzStartTime = buzzStartTime;
       roomInfo = room;
 
+      // --- XỬ LÝ ĐÁP ÁN ---
       const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-      // SỬA ĐIỀU KIỆN TẠI ĐÂY (Thêm vế pending_open)
+      // SỬA: Chấp nhận cả pending_open để lấy mốc thời gian
       if (room.answer_status === 'open' || room.answer_status === 'pending_open') {
         answerStartTime = newAnswerStartTime;
         answerDurationLimit = room.answer_duration || 0;
-        answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + (answerDurationLimit * 1000) : 0;
+        answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
+
+        const currentServerTime = Date.now() + serverTimeOffset;
+        lockedAnswer = (answerDurationLimit > 0 && answerEndTime > 0 && answerEndTime <= currentServerTime);
+        fetchAnswers();
+      } else {
+        answerStartTime = 0;
+        answerEndTime = 0;
+        lockedAnswer = true;
+        fetchAnswers();
       }
 
+      // --- XỬ LÝ CHUÔNG ---
       const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
-      // SỬA ĐIỀU KIỆN TẠI ĐÂY (Thêm vế pending_open)
+      const buzzDuration = room.buzz_duration || 0;
+
+      // SỬA QUAN TRỌNG: Host phải cập nhật buzzStartTime ngay cả khi là pending_open
+      // Điều này giúp hàm tính toán (formatBuzzTime) không bị trừ cho 0 -> tránh lỗi 0.000s
       if (room.buzz_status === 'open' || room.buzz_status === 'pending_open') {
         buzzStartTime = newBuzzStartTime;
-        buzzDurationLimit = room.buzz_duration || 0;
-        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + (buzzDurationLimit * 1000) : 0;
+        buzzDurationLimit = buzzDuration;
+        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
+
+        const currentServerTime = Date.now() + serverTimeOffset;
+        lockedBuzz = (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime);
+
+        fetchBuzz();
+      } else {
+        buzzStartTime = 0;
+        buzzDurationLimit = buzzDuration;
+        buzzEndTime = 0;
+        lockedBuzz = true;
+        fetchBuzz();
       }
 
       updateUI();
