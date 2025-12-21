@@ -1115,75 +1115,85 @@
     }
 
     // --- REALTIME (Giữ nguyên) ---
-    function subscribeRealtime() {
-      if (roomChannel) supabase.removeChannel(roomChannel);
+    async function subscribeRealtime() {
+    if (!currentRoom) return;
 
-      roomChannel = supabase.channel(
-        'room-' + currentRoom,
-        { config: { presence: { key: myName } } }
-      );
+    // 1. Dọn dẹp tất cả các kênh cũ nếu đang tồn tại để tránh trùng lặp lắng nghe
+    if (roomChannel) await supabase.removeChannel(roomChannel);
+    if (answersChannel) await supabase.removeChannel(answersChannel);
+    if (buzzesChannel) await supabase.removeChannel(buzzesChannel);
+    if (participantsChannel) await supabase.removeChannel(participantsChannel);
 
-      // Lắng nghe thay đổi trạng thái phòng (Lock/Open/Reset)
-      roomChannel.on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` },
-        (payload) => handleRoomUpdate(payload.new)
-      );
+    // 2. Kênh chính của phòng: Theo dõi trạng thái (Open/Lock) và Presence
+    roomChannel = supabase.channel('room_state_' + currentRoom, {
+        config: { presence: { key: myName } }
+    });
 
-      // --- PHẦN QUAN TRỌNG: SỬA LẠI ĐỂ NHẬN DỮ LIỆU ---
-
-      // Lắng nghe bảng answers: Dùng event '*' để nhận cả INSERT và UPDATE (khi thí sinh sửa đáp án)
-      if (answersChannel) supabase.removeChannel(answersChannel);
-      answersChannel = supabase.channel('answers_channel')
+    roomChannel
         .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` }, // Đổi 'INSERT' thành '*'
-          fetchAnswers
-        ).subscribe();
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` },
+            (payload) => handleRoomUpdate(payload.new)
+        )
+        .on('presence', { event: 'leave' }, async (payload) => {
+            // Xử lý khi thí sinh thoát hoặc mất mạng
+            const usersLeft = payload.left.map(p => p.key);
+            for (let name of usersLeft) {
+                if (!name || name.startsWith("SYNC_TIME_")) continue;
+                await supabase.from('participants').delete().eq('room_code', currentRoom).eq('name', name);
+            }
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                await roomChannel.track({ key: myName, role: 'host' });
+            }
+        });
 
-      // Lắng nghe bảng buzzes: Dùng event '*' để nhận mọi tín hiệu chuông (kể cả khi bấm lại)
-      if (buzzesChannel) supabase.removeChannel(buzzesChannel);
-      buzzesChannel = supabase.channel('buzzes_channel')
+    // 3. Kênh Lắng nghe Đáp án (Answers): Dùng event '*' để bắt cả INSERT và UPDATE (upsert)
+    answersChannel = supabase.channel('answers_realtime_' + currentRoom)
         .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` }, // Đổi 'INSERT' thành '*'
-          fetchBuzz
-        ).subscribe();
+            'postgres_changes',
+            { 
+                event: '*', // NHẬN CẢ INSERT VÀ UPDATE
+                schema: 'public', 
+                table: 'answers', 
+                filter: `room_code=eq.${currentRoom}` 
+            },
+            () => {
+                console.log("Có thay đổi đáp án, đang cập nhật...");
+                fetchAnswers(); // Gọi hàm lấy lại dữ liệu và render
+            }
+        )
+        .subscribe();
 
-      // Lắng nghe bảng participants: Theo dõi danh sách thí sinh online
-      if (participantsChannel) supabase.removeChannel(participantsChannel);
-      participantsChannel = supabase.channel('participants_channel')
+    // 4. Kênh Lắng nghe Chuông (Buzzes): Dùng event '*'
+    buzzesChannel = supabase.channel('buzzes_realtime_' + currentRoom)
         .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` },
-          fetchUsers
-        ).subscribe();
+            'postgres_changes',
+            { 
+                event: '*', // NHẬN CẢ INSERT VÀ UPDATE
+                schema: 'public', 
+                table: 'buzzes', 
+                filter: `room_code=eq.${currentRoom}` 
+            },
+            () => {
+                console.log("Có người bấm chuông, đang cập nhật...");
+                fetchBuzz(); // Gọi hàm lấy lại dữ liệu và render
+            }
+        )
+        .subscribe();
 
-      // Xử lý Presence (Khi thí sinh thoát hoặc mất kết nối)
-      roomChannel.on('presence', { event: 'leave' }, async (payload) => {
-        const usersLeft = payload.left.map(p => p.key || p.name || p.user);
-        for (let name of usersLeft) {
-          if (!name) continue;
-          if (name.startsWith("SYNC_TIME_")) continue;
-          const { error } = await supabase
-            .from('participants')
-            .delete()
-            .eq('room_code', currentRoom)
-            .eq('name', name);
-          if (error) console.error(error.message);
-        }
-      });
+    // 5. Kênh Theo dõi Thí sinh (Participants)
+    participantsChannel = supabase.channel('participants_realtime_' + currentRoom)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` },
+            () => fetchUsers()
+        )
+        .subscribe();
 
-      roomChannel.subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await roomChannel.track({
-            key: myName,
-            name: myName,
-            role: myRole
-          });
-        }
-      });
-    }
+    console.log("Đã đăng ký Realtime cho phòng:", currentRoom);
+}
 
     // --- LOGIC ĐIỀU KHIỂN PHÒNG ---
 
