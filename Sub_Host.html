@@ -1199,7 +1199,7 @@ async function resetRoomData(isAnswer = false) {
         // Reset đáp án: Xóa bảng trả lời và có thể đặt lại mốc thời gian mới nếu cần
         await supabase.from("answers").delete().eq("room_code", currentRoom);
         await supabase.from("rooms").update({ 
-            ans_open_time: now // Tính là 1 lượt mở mới
+            answer_open_time: now // Tính là 1 lượt mở mới
         }).eq("room_code", currentRoom);
     } else {
         // Reset chuông: Quan trọng nhất để giải quyết vấn đề của bạn
