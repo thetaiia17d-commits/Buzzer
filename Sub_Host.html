@@ -1011,13 +1011,27 @@
 
     // --- FETCH DATA (Giữ nguyên) ---
     async function fetchAnswers() {
-      const { data } = await supabase.from('answers').select('*').eq('room_code', currentRoom);
-      if (data) { answers = data; renderAnswers(); }
+      const { data } = await supabase
+        .from('answers')
+        .select('*')
+        .eq('room_code', currentRoom)
+        .order('created_at', { ascending: true }); // Hiện đáp án theo thứ tự thời gian gửi
+      if (data) {
+        answers = data;
+        renderAnswers();
+      }
     }
 
     async function fetchBuzz() {
-      const { data } = await supabase.from('buzzes').select('*').eq('room_code', currentRoom);
-      if (data) { buzzOrder = data; renderBuzz(); }
+      const { data } = await supabase
+        .from('buzzes')
+        .select('*')
+        .eq('room_code', currentRoom)
+        .order('created_at', { ascending: true }); // Người bấm trước lên đầu danh sách
+      if (data) {
+        buzzOrder = data;
+        renderBuzz();
+      }
     }
 
     async function fetchUsers() {
