@@ -1160,58 +1160,54 @@
     }
 
     // Logic cập nhật trạng thái phòng (Mở/Khóa chuông)
-async function updateRoomStatus(status, duration = 0, isAnswer = false) {
-    const now = new Date().toISOString();
-    let updateData = {};
+    // 1. Sửa hàm updateRoomStatus
+    async function updateRoomStatus(status, duration = 0, isAnswer = false) {
+      const now = new Date().toISOString();
+      let updateData = {};
 
-    if (isAnswer) {
-        // Đối với đáp án: Chỉ cập nhật ans_open_time nếu trước đó đang đóng (status khác 'open')
-        // hoặc người dùng chủ động mở lại
-        updateData = { 
-            answer_status: status, 
-            answer_duration: duration 
+      if (isAnswer) {
+        // Đổi ans_ thành answer_
+        updateData = {
+          answer_status: status,
+          answer_duration: duration
         };
-        if (status === 'open') {
-            updateData.answer_open_time = now;
+        // Chỉ cập nhật answer_open_time nếu trước đó đang KHÔNG mở (tránh nhảy thời gian)
+        if (status === 'open' && roomData.answer_status !== 'open') {
+          updateData.answer_open_time = now;
         }
-    } else {
-        // Đối với chuông: 
-        updateData = { 
-            buzz_status: status, 
-            buzz_duration: duration 
+      } else {
+        updateData = {
+          buzz_status: status,
+          buzz_duration: duration
         };
-        
-        // Chỉ cập nhật buzz_open_time khi chuyển từ trạng thái khác sang 'open'
-        // Điều này ngăn chặn việc "nhảy thời gian" nếu bấm Unlock nhiều lần
-        if (status === 'open') {
-            updateData.buzz_open_time = now;
+        // Chỉ cập nhật buzz_open_time nếu trước đó đang KHÔNG mở
+        if (status === 'open' && roomData.buzz_status !== 'open') {
+          updateData.buzz_open_time = now;
         }
+      }
+
+      const { error } = await supabase.from("rooms").update(updateData).eq("room_code", currentRoom);
+      if (error) showPopup("Lỗi: " + error.message, "error");
     }
 
-    const { error } = await supabase.from("rooms").update(updateData).eq("room_code", currentRoom);
-    if (error) showPopup("Lỗi cập nhật: " + error.message, "error");
-}
-
-// Logic Reset dữ liệu (Chuông hoặc Đáp án)
-async function resetRoomData(isAnswer = false) {
-    const now = new Date().toISOString();
-    if (isAnswer) {
-        // Reset đáp án: Xóa bảng trả lời và có thể đặt lại mốc thời gian mới nếu cần
+    // 2. Sửa hàm resetRoomData (Tính là một lượt mới)
+    async function resetRoomData(isAnswer = false) {
+      const now = new Date().toISOString();
+      if (isAnswer) {
         await supabase.from("answers").delete().eq("room_code", currentRoom);
-        await supabase.from("rooms").update({ 
-            answer_open_time: now // Tính là 1 lượt mở mới
+        // Reset đáp án: Cập nhật lại mốc thời gian để tính lượt mở mới
+        await supabase.from("rooms").update({
+          answer_open_time: now
         }).eq("room_code", currentRoom);
-    } else {
-        // Reset chuông: Quan trọng nhất để giải quyết vấn đề của bạn
+      } else {
         await supabase.from("buzz_responses").delete().eq("room_code", currentRoom);
-        
-        // Khi Reset, ta cập nhật lại buzz_open_time để tính là một lượt chơi mới hoàn toàn
-        await supabase.from("rooms").update({ 
-            buzz_open_time: now 
+        // Reset chuông: Cập nhật lại mốc thời gian để tính lượt mở mới
+        await supabase.from("rooms").update({
+          buzz_open_time: now
         }).eq("room_code", currentRoom);
+      }
+      showPopup("Đã Reset và bắt đầu lượt mới!");
     }
-    showPopup("Đã Reset dữ liệu!");
-}
 
     window.onload = () => {
       roomInfo = document.getElementById("roomInfo");

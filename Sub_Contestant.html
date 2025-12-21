@@ -405,28 +405,69 @@
             }
         }
 
-        function startTimer(elementId, startTimeISO, duration, callbackEnd) {
-            const el = document.getElementById(elementId);
-            if (elementId === 'answerCountdown' && answerInterval) clearInterval(answerInterval);
-            if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
-            if (!startTimeISO || duration <= 0) { el.innerText = "--.--s"; return; }
-            const sharedStartTime = new Date(startTimeISO).getTime();
-            const localEndTime = sharedStartTime + (duration * 1000);
-            const update = () => {
-                const now = getServerTimeNow();
-                let remain = localEndTime - now;
-                if (remain <= 0) {
-                    el.innerText = "0.000s";
-                    if (elementId === 'answerCountdown') clearInterval(answerInterval);
-                    if (elementId === 'buzzCountdown') clearInterval(buzzInterval);
-                    if (callbackEnd) callbackEnd();
-                } else { el.innerText = (remain / 1000).toFixed(3) + "s"; }
-            };
-            update();
-            const interval = setInterval(update, 30);
-            if (elementId === 'answerCountdown') answerInterval = interval;
-            if (elementId === 'buzzCountdown') buzzInterval = interval;
+        // 3. Hàm startTimer sửa lại để chính xác từng miligiây
+function startTimer(displayId, openTimeISO, durationSeconds, onEnd) {
+    const display = document.getElementById(displayId);
+    if (buzzInterval) clearInterval(buzzInterval);
+    if (answerInterval) clearInterval(answerInterval);
+
+    // Nếu duration = 0 (mở vĩnh viễn), chỉ hiển thị 0.000s và không chạy loop
+    if (durationSeconds <= 0) {
+        display.innerText = "∞"; 
+        return;
+    }
+
+    const openTime = new Date(openTimeISO).getTime();
+    const durationMs = durationSeconds * 1000;
+    const endTime = openTime + durationMs;
+
+    const update = () => {
+        const now = new Date().getTime();
+        const remain = endTime - now;
+
+        if (remain <= 0) {
+            if (displayId === 'buzzCountdown') clearInterval(buzzInterval);
+            else clearInterval(answerInterval);
+            display.innerText = "0.000s";
+            if (onEnd) onEnd();
+        } else {
+            // Hiển thị chính xác số giây còn lại
+            display.innerText = (remain / 1000).toFixed(3) + "s";
         }
+    };
+
+    update(); // Chạy ngay lập tức lần đầu
+    if (displayId === 'buzzCountdown') {
+        buzzInterval = setInterval(update, 50);
+    } else {
+        answerInterval = setInterval(update, 50);
+    }
+}
+
+// 4. Khi nhận dữ liệu từ Realtime, đổi ans_ thành answer_
+function handleRoomUpdate(roomData) {
+    // Xử lý Đáp án
+    if (roomData.answer_status === 'open') {
+        startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => {
+            btnSend.disabled = true;
+        });
+        answerArea.style.display = 'flex';
+    } else {
+        answerArea.style.display = 'none';
+        if (answerInterval) clearInterval(answerInterval);
+    }
+
+    // Xử lý Chuông (Tương tự với buzz_)
+    if (roomData.buzz_status === 'open') {
+        btnBuzz.disabled = false;
+        startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
+            btnBuzz.disabled = true;
+        });
+    } else {
+        btnBuzz.disabled = true;
+        if (buzzInterval) clearInterval(buzzInterval);
+    }
+}
 
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
