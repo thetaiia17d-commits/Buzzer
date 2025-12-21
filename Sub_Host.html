@@ -1026,56 +1026,22 @@
     function handleRoomUpdate(room) {
       const oldAnswerStartTime = answerStartTime;
       const oldBuzzStartTime = buzzStartTime;
-
       roomInfo = room;
 
       const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
-
-      if (room.answer_status === 'open') {
+      // SỬA ĐIỀU KIỆN TẠI ĐÂY (Thêm vế pending_open)
+      if (room.answer_status === 'open' || room.answer_status === 'pending_open') {
         answerStartTime = newAnswerStartTime;
         answerDurationLimit = room.answer_duration || 0;
-        answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
-
-        const currentServerTime = Date.now() + serverTimeOffset;
-        if (answerDurationLimit > 0 && answerEndTime > 0 && answerEndTime <= currentServerTime) {
-          lockedAnswer = true;
-        } else {
-          lockedAnswer = false;
-        }
-
-        fetchAnswers();
-
-      } else {
-        answerStartTime = 0;
-        answerDurationLimit = room.answer_duration || 0;
-        answerEndTime = 0;
-        lockedAnswer = true;
-        fetchAnswers();
+        answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + (answerDurationLimit * 1000) : 0;
       }
 
       const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
-      const buzzDuration = room.buzz_duration || 0;
-
-      if (room.buzz_status === 'open') {
+      // SỬA ĐIỀU KIỆN TẠI ĐÂY (Thêm vế pending_open)
+      if (room.buzz_status === 'open' || room.buzz_status === 'pending_open') {
         buzzStartTime = newBuzzStartTime;
-        buzzDurationLimit = buzzDuration;
-        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
-
-        const currentServerTime = Date.now() + serverTimeOffset;
-        if (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime) {
-          lockedBuzz = true;
-        } else {
-          lockedBuzz = false;
-        }
-
-        fetchBuzz();
-
-      } else {
-        buzzStartTime = 0;
-        buzzDurationLimit = buzzDuration;
-        buzzEndTime = 0;
-        lockedBuzz = true;
-        fetchBuzz();
+        buzzDurationLimit = room.buzz_duration || 0;
+        buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + (buzzDurationLimit * 1000) : 0;
       }
 
       updateUI();
