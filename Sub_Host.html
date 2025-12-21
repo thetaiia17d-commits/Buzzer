@@ -1159,7 +1159,7 @@
       });
     }
 
-    // 1. Hàm cập nhật trạng thái (Mở/Khóa)
+    // 1. Hàm cập nhật trạng thái
 async function updateRoomStatus(status, duration, isAnswer) {
     if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
 
@@ -1169,59 +1169,50 @@ async function updateRoomStatus(status, duration, isAnswer) {
 
     let updateData = {};
     if (status === 'open') {
-        // Khi bấm MỞ: Host ấn định luôn thời gian bắt đầu
+        // DÙNG GIỜ ĐỒNG BỘ: getServerTimeNowISO() thay vì new Date().toISOString()
+        const nowServer = getServerTimeNowISO();
         updateData[statusField] = 'open';
-        updateData[timeField] = new Date().toISOString(); 
+        updateData[timeField] = nowServer; 
         updateData[durationField] = duration;
 
-        // Xóa sạch dữ liệu cũ của lượt trước
         const table = isAnswer ? 'answers' : 'buzzes';
         await supabase.from(table).delete().eq('room_code', currentRoom);
         showPopup(isAnswer ? "Đã mở đáp án!" : "Đã mở chuông!");
     } else {
-        // Khi bấm KHÓA
         updateData[statusField] = 'locked';
-        showPopup(isAnswer ? "Đã khóa đáp án!" : "Đã khóa chuông!");
+        showPopup(isAnswer ? "Đã khóa!" : "Đã khóa!");
     }
 
-    const { error } = await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
-    if (error) console.error("Lỗi cập nhật:", error.message);
+    await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
 }
 
-// 2. Hàm Reset dữ liệu (Theo yêu cầu logic của bạn)
+// 2. Hàm Reset dữ liệu
 async function resetRoomData(isAnswer) {
-    if (!currentRoom || !roomInfo) return showPopup("Chưa vào phòng!", "error");
+    if (!currentRoom || !roomInfo) return;
 
     const table = isAnswer ? 'answers' : 'buzzes';
     const statusField = isAnswer ? 'answer_status' : 'buzz_status';
     const timeField = isAnswer ? 'answer_open_time' : 'buzz_open_time';
-
-    // 1. Xóa sạch danh sách trong Database (buzzes hoặc answers)
-    const { error: deleteError } = await supabase.from(table).delete().eq('room_code', currentRoom);
-    if (deleteError) return showPopup("Lỗi xóa dữ liệu!", "error");
-
     const duration = isAnswer ? roomInfo.answer_duration : roomInfo.buzz_duration;
-    let updateData = {};
 
+    await supabase.from(table).delete().eq('room_code', currentRoom);
+
+    let updateData = {};
+    // Quan trọng: Dùng getServerTimeNowISO() để đồng bộ với Thí sinh
     if (duration === 0) {
-        // LOGIC VĨNH VIỄN: Tính lượt mới -> Cập nhật thời gian mới
         updateData[statusField] = 'open';
-        updateData[timeField] = new Date().toISOString(); 
+        updateData[timeField] = getServerTimeNowISO();
     } else {
-        // LOGIC GIỚI HẠN: Giữ nguyên lượt cũ -> Không đổi thời gian
-        // Nhưng PHẢI cập nhật lại trạng thái để kích hoạt Realtime cho Thí sinh
-        updateData[statusField] = 'open'; 
-        // Mẹo: Cập nhật lại chính nó để Supabase gửi thông báo "Update" tới Thí sinh
+        // Force update để thí sinh nhận được tin nhắn làm mới danh sách
+        updateData[statusField] = 'open';
+        updateData[timeField] = roomInfo[timeField]; // Giữ nguyên thời gian cũ
     }
 
-    // 2. Cập nhật bảng Rooms để tất cả Thí sinh nhận được lệnh làm mới danh sách
     await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
-
-    // 3. Cập nhật giao diện Host ngay lập tức
+    
     if (isAnswer) { answers = []; renderAnswers(); } 
     else { buzzOrder = []; renderBuzz(); }
-    
-    showPopup(isAnswer ? "Đã Reset Đáp án!" : "Đã Reset Chuông!");
+    showPopup("Đã Reset dữ liệu!");
 }
 
     window.onload = () => {

@@ -405,25 +405,38 @@
             }
         }
 
-        function startTimer(elementId, startTimeISO, duration, callbackEnd) {
+        function startTimer(elementId, startTimeISO, durationSec, callbackEnd) {
+            if (!startTimeISO || durationSec <= 0) return;
+
+            // XÓA INTERVAL CŨ (Lỗi 2) để tránh chạy chồng chéo
+            if (elementId === 'answerCountdown') {
+                if (answerInterval) clearInterval(answerInterval);
+            } else if (elementId === 'buzzCountdown') {
+                if (buzzInterval) clearInterval(buzzInterval);
+            }
+
+            const startTimeMs = new Date(startTimeISO).getTime();
+            const durationMs = durationSec * 1000;
             const el = document.getElementById(elementId);
-            if (elementId === 'answerCountdown' && answerInterval) clearInterval(answerInterval);
-            if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
-            if (!startTimeISO || duration <= 0) { el.innerText = "--.--s"; return; }
-            const sharedStartTime = new Date(startTimeISO).getTime();
-            const localEndTime = sharedStartTime + (duration * 1000);
+
             const update = () => {
-                const now = getServerTimeNow();
-                let remain = localEndTime - now;
+                // DÙNG GIỜ ĐỒNG BỘ (Lỗi 1): Date.now() + serverTimeOffset
+                const nowSynced = Date.now() + serverTimeOffset;
+                const remain = durationMs - (nowSynced - startTimeMs);
+
                 if (remain <= 0) {
                     el.innerText = "0.000s";
                     if (elementId === 'answerCountdown') clearInterval(answerInterval);
                     if (elementId === 'buzzCountdown') clearInterval(buzzInterval);
                     if (callbackEnd) callbackEnd();
-                } else { el.innerText = (remain / 1000).toFixed(3) + "s"; }
+                } else {
+                    el.innerText = (remain / 1000).toFixed(3) + "s";
+                }
             };
+
             update();
             const interval = setInterval(update, 30);
+
             if (elementId === 'answerCountdown') answerInterval = interval;
             if (elementId === 'buzzCountdown') buzzInterval = interval;
         }
@@ -504,33 +517,33 @@
         }
 
         async function handleRoomUpdate(roomData) {
-    if (!roomData) return;
-    roomInfo = roomData; // Lưu thông tin phòng để dùng cho logic bấm chuông
+            if (!roomData) return;
+            roomInfo = roomData; // Lưu thông tin phòng để dùng cho logic bấm chuông
 
-    // --- XỬ LÝ CHUÔNG ---
-    if (roomData.buzz_status === 'open') {
-        updateBuzzUI(false); // Mở nút bấm
-        // Chạy đồng hồ dựa trên thời gian Host đã ấn định
-        startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
-    } else {
-        updateBuzzUI(true); // Khóa nút bấm
-        document.getElementById('buzzCountdown').innerText = "0.000s";
-        if (buzzInterval) clearInterval(buzzInterval);
-    }
+            // --- XỬ LÝ CHUÔNG ---
+            if (roomData.buzz_status === 'open') {
+                updateBuzzUI(false); // Mở nút bấm
+                // Chạy đồng hồ dựa trên thời gian Host đã ấn định
+                startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
+            } else {
+                updateBuzzUI(true); // Khóa nút bấm
+                document.getElementById('buzzCountdown').innerText = "0.000s";
+                if (buzzInterval) clearInterval(buzzInterval);
+            }
 
-    // --- XỬ LÝ ĐÁP ÁN ---
-    if (roomData.answer_status === 'open') {
-        updateAnswerUI(false); // Mở khung nhập
-        startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => updateAnswerUI(true));
-    } else {
-        updateAnswerUI(true); // Khóa khung nhập
-        document.getElementById('answerCountdown').innerText = "0.000s";
-        if (answerInterval) clearInterval(answerInterval);
-    }
+            // --- XỬ LÝ ĐÁP ÁN ---
+            if (roomData.answer_status === 'open') {
+                updateAnswerUI(false); // Mở khung nhập
+                startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => updateAnswerUI(true));
+            } else {
+                updateAnswerUI(true); // Khóa khung nhập
+                document.getElementById('answerCountdown').innerText = "0.000s";
+                if (answerInterval) clearInterval(answerInterval);
+            }
 
-    // Luôn cập nhật danh sách hiển thị
-    fetchBuzzList();
-}
+            // Luôn cập nhật danh sách hiển thị
+            fetchBuzzList();
+        }
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey && document.activeElement === answerInput) {
