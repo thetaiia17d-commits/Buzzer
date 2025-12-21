@@ -563,12 +563,7 @@
             // Xử lý Reset hoặc Pending
             if (roomData.buzz_status === 'pending_open' || roomData.resetBuzz === true) {
                 buzzOrder = []; hasBuzzed = false; renderBuzzTable();
-                let b_start_iso = roomData.buzz_open_time;
 
-                if (!b_start_iso) {
-                    b_start_iso = new Date(getServerTimeNow()).toISOString();
-                    await supabase.from('rooms').update({ buzz_status: 'open', buzz_open_time: b_start_iso, resetBuzz: false }).eq('room_code', myRoom);
-                }
 
                 lastKnownBuzzTime = b_start_iso;
                 currentBuzzStartTime = new Date(b_start_iso).getTime();
@@ -581,15 +576,11 @@
 
             if (roomData.buzz_status === 'open') {
                 const serverBuzzTime = roomData.buzz_open_time;
-                // Cập nhật Timer nếu đây là một đợt mở chuông hoàn toàn mới
+                // Nếu thời gian mở chuông thay đổi -> Đây chính là LƯỢT MỚI
                 if (serverBuzzTime !== lastKnownBuzzTime) {
                     lastKnownBuzzTime = serverBuzzTime;
-                    currentBuzzStartTime = new Date(serverBuzzTime).getTime();
-                    
-                    // ĐIỀU CHỈNH: Khi có lượt mới, reset trạng thái đã bấm và mở lại UI cho thí sinh
-                    hasBuzzed = false;
-                    updateBuzzUI(false); 
-                    
+                    hasBuzzed = false; // Reset trạng thái đã bấm của thí sinh
+                    updateBuzzUI(false);
                     startTimer('buzzCountdown', serverBuzzTime, roomData.buzz_duration, () => updateBuzzUI(true));
                 }
             }
