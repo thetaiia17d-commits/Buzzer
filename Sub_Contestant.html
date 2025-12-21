@@ -282,6 +282,8 @@
         let currentBuzzStartTime = 0;
         let currentAnswerStartTime = 0;
         let buzzOrder = [];
+        let lastKnownBuzzTime = null;
+        let lastKnownAnswerTime = null;
 
         const loginArea = document.getElementById("loginArea");
         const gameArea = document.getElementById("gameArea");
@@ -524,54 +526,82 @@
 
         async function handleRoomUpdate(roomData) {
             if (!roomData) return;
-            currentAnswerStartTime = roomData.answer_open_time ? new Date(roomData.answer_open_time).getTime() : 0;
+
+            // --- PHẦN TRẢ LỜI (ANSWER) ---
             if (roomData.answer_status === 'pending_open') {
                 resetAnswerStatusBox();
                 const start_iso = new Date(getServerTimeNow()).toISOString();
                 currentAnswerStartTime = new Date(start_iso).getTime();
+                lastKnownAnswerTime = start_iso; // Ghi nhớ mốc mới
                 await supabase.from('rooms').update({ answer_status: 'open', answer_open_time: start_iso }).eq('room_code', myRoom);
                 updateAnswerUI(false);
                 startTimer('answerCountdown', start_iso, roomData.answer_duration, () => updateAnswerUI(true));
-            } else if (roomData.answer_status === 'open') {
+            }
+            else if (roomData.answer_status === 'open') {
                 updateAnswerUI(false);
-                startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => updateAnswerUI(true));
+                const serverAnsTime = roomData.answer_open_time;
+
+                // CHỈ khởi động lại Timer nếu mốc thời gian thực sự thay đổi (Reset hoặc lượt mới)
+                if (serverAnsTime !== lastKnownAnswerTime) {
+                    lastKnownAnswerTime = serverAnsTime;
+                    currentAnswerStartTime = new Date(serverAnsTime).getTime();
+                    startTimer('answerCountdown', serverAnsTime, roomData.answer_duration, () => updateAnswerUI(true));
+                }
                 await fetchMyLastAnswer();
-            } else {
+            }
+            else {
+                // Trạng thái Locked/Closed
+                lastKnownAnswerTime = null;
                 updateAnswerUI(true);
                 document.getElementById('answerCountdown').innerText = "0.000s";
                 if (answerInterval) clearInterval(answerInterval);
-                // Đảm bảo xóa sạch ô cam khi không trong trạng thái trả lời
                 answerStatusBox.innerText = "";
                 answerStatusBox.innerHTML = "";
             }
-            // (Phần Buzz giữ nguyên...)
-            currentBuzzStartTime = roomData.buzz_open_time ? new Date(roomData.buzz_open_time).getTime() : 0;
+
+            // --- PHẦN BẤM CHUÔNG (BUZZ) ---
+            // Xử lý Reset hoặc Pending
             if (roomData.buzz_status === 'pending_open' || roomData.resetBuzz === true) {
                 buzzOrder = []; hasBuzzed = false; renderBuzzTable();
-                if (!roomData.buzz_open_time) {
-                    const b_start_iso = new Date(getServerTimeNow()).toISOString();
-                    currentBuzzStartTime = new Date(b_start_iso).getTime();
-                    await supabase.from('rooms').update({ buzz_status: 'open', buzz_open_time: b_start_iso }).eq('room_code', myRoom);
-                    startTimer('buzzCountdown', b_start_iso, roomData.buzz_duration, () => updateBuzzUI(true));
-                } else {
-                    startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
-                }
-                updateBuzzUI(false); showPopup("Host đã reset chuông!"); return;
-            }
-            if (roomData.buzz_status === 'open') {
-                const newStartTime = new Date(roomData.buzz_open_time).getTime();
+                let b_start_iso = roomData.buzz_open_time;
 
-                // CHỈ cập nhật nếu chưa có mốc thời gian HOẶC đây là một đợt mở chuông hoàn toàn mới (lệch trên 1 giây)
-                if (!currentBuzzStartTime || Math.abs(currentBuzzStartTime - newStartTime) > 1000) {
-                    currentBuzzStartTime = newStartTime;
-                    startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
+                if (!b_start_iso) {
+                    b_start_iso = new Date(getServerTimeNow()).toISOString();
+                    await supabase.from('rooms').update({ buzz_status: 'open', buzz_open_time: b_start_iso, resetBuzz: false }).eq('room_code', myRoom);
                 }
 
+                lastKnownBuzzTime = b_start_iso;
+                currentBuzzStartTime = new Date(b_start_iso).getTime();
+                startTimer('buzzCountdown', b_start_iso, roomData.buzz_duration, () => updateBuzzUI(true));
                 updateBuzzUI(false);
-            } else {
-                updateBuzzUI(true); document.getElementById('buzzCountdown').innerText = "0.000s";
+                showPopup("Host đã reset chuông!");
+                // Sau khi xử lý Reset xong thì thoát hàm để tránh chạy xuống phần dưới
+                return;
+            }
+
+            if (roomData.buzz_status === 'open') {
+                const serverBuzzTime = roomData.buzz_open_time;
+                // Cập nhật Timer nếu đây là một đợt mở chuông hoàn toàn mới
+                if (serverBuzzTime !== lastKnownBuzzTime) {
+                    lastKnownBuzzTime = serverBuzzTime;
+                    currentBuzzStartTime = new Date(serverBuzzTime).getTime();
+                    
+                    // ĐIỀU CHỈNH: Khi có lượt mới, reset trạng thái đã bấm và mở lại UI cho thí sinh
+                    hasBuzzed = false;
+                    updateBuzzUI(false); 
+                    
+                    startTimer('buzzCountdown', serverBuzzTime, roomData.buzz_duration, () => updateBuzzUI(true));
+                }
+            }
+            else {
+                // Trạng thái Locked
+                lastKnownBuzzTime = null;
+                updateBuzzUI(true);
+                document.getElementById('buzzCountdown').innerText = "0.000s";
                 if (buzzInterval) clearInterval(buzzInterval);
             }
+
+            // Cuối cùng luôn cập nhật danh sách người đã bấm
             fetchBuzzList();
         }
 

@@ -472,6 +472,9 @@
     let answerDurationInput = null;
     let buzzDurationInput = null;
 
+    let hostLastBuzzTime = null;
+    let hostLastAnsTime = null;
+
     // --- UTILS ---
     function showPopup(message, type = "success") {
       const popup = document.getElementById("popupMessage");
@@ -1007,10 +1010,19 @@
         .from('buzzes')
         .select('*')
         .eq('room_code', currentRoom)
-        .order('created_at', { ascending: true }); // Sắp xếp cố định từ database
+        .order('created_at', { ascending: true }); // Sắp xếp theo thời gian tại Server
 
       if (data) {
-        buzzOrder = data;
+        // Lọc trùng: Chỉ lấy lượt bấm đầu tiên của mỗi người
+        const unique = [];
+        const names = new Set();
+        for (const item of data) {
+          if (!names.has(item.name)) {
+            names.add(item.name);
+            unique.push(item);
+          }
+        }
+        buzzOrder = unique;
         renderBuzz();
       }
     }
@@ -1199,61 +1211,53 @@
       });
     }
 
+    // Cập nhật hàm updateRoomStatus
     async function updateRoomStatus(status, duration, isAnswer) {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+      if (!currentRoom) return;
+      const statusField = isAnswer ? 'answer_status' : 'buzz_status';
+      const timeField = isAnswer ? 'answer_open_time' : 'buzz_open_time';
+      const durationField = isAnswer ? 'answer_duration' : 'buzz_duration';
 
-      let updateData = {};
-      let statusField = isAnswer ? 'answer_status' : 'buzz_status';
-      let timeField = isAnswer ? 'answer_open_time' : 'buzz_open_time';
-      let durationField = isAnswer ? 'answer_duration' : 'buzz_duration';
-      let errorMsg = isAnswer ? "Lỗi cập nhật!" : "Lỗi cập nhật!";
-      let successMsg = isAnswer ? "Đã khóa đáp án!" : "Đã khóa chuông!";
+      // Lấy trạng thái hiện tại
+      const currentStatus = isAnswer ? roomInfo.answer_status : roomInfo.buzz_status;
+      const currentTime = isAnswer ? roomInfo.answer_open_time : roomInfo.buzz_open_time;
 
+      let updateObj = {
+        [statusField]: status,
+        [durationField]: duration,
+        [timeField]: status === 'locked' ? null : getServerTimeNowISO()
+      };
 
-      if (status === 'open') {
-        updateData[statusField] = 'pending_open';
-        updateData[timeField] = null;
-        updateData[durationField] = duration;
-
-        const optimisticRoom = {
-          answer_status: isAnswer ? 'pending_open' : (roomInfo ? roomInfo.answer_status : 'locked'),
-          answer_open_time: null,
-          answer_duration: isAnswer ? duration : (roomInfo ? roomInfo.answer_duration : 0),
-
-          buzz_status: !isAnswer ? 'pending_open' : (roomInfo ? roomInfo.buzz_status : 'locked'),
-          buzz_open_time: null,
-          buzz_duration: !isAnswer ? duration : (roomInfo ? roomInfo.buzz_duration : 0)
-        };
-        handleRoomUpdate(optimisticRoom);
-        showPopup(isAnswer ? "Đáp án: Đã gửi lệnh, đang chờ thí sinh đồng bộ..." : "Chuông: Đã gửi lệnh, đang chờ thí sinh đồng bộ...");
-
-        if (isAnswer) {
-          await supabase.from('answers').delete().eq('room_code', currentRoom);
-        } else {
-          await supabase.from('buzzes').delete().eq('room_code', currentRoom);
-        }
-
-      } else if (status === 'locked') {
-        updateData[statusField] = 'locked';
-        updateData[timeField] = null;
-        updateData[durationField] = 0;
-
-        const optimisticRoom = {
-          answer_status: isAnswer ? 'locked' : (roomInfo ? roomInfo.answer_status : 'locked'),
-          answer_open_time: null,
-          answer_duration: isAnswer ? 0 : (roomInfo ? roomInfo.answer_duration : 0),
-
-          buzz_status: !isAnswer ? 'locked' : (roomInfo ? roomInfo.buzz_status : 'locked'),
-          buzz_open_time: null,
-          buzz_duration: !isAnswer ? 0 : (roomInfo ? roomInfo.buzz_duration : 0)
-        };
-        handleRoomUpdate(optimisticRoom);
-        showPopup(successMsg);
+      // ĐIỀU CHỈNH: Nếu đang OPEN mà nhấn Mở tiếp thì giữ nguyên thời gian cũ (chỉ tính 1 lượt)
+      if (status === 'open' && currentStatus === 'open') {
+        updateObj[timeField] = currentTime;
       }
 
-      const { error } = await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
+      const { error } = await supabase.from('rooms').update(updateObj).eq('room_code', currentRoom);
+      if (error) showPopup("Cập nhật thất bại: " + error.message, "error");
+    }
 
-      if (error) showPopup(errorMsg + ": " + error.message, "error");
+    // Cập nhật hàm resetRoomData
+    async function resetRoomData(isAnswer) {
+      if (!currentRoom) return;
+      const table = isAnswer ? "answers" : "buzzes";
+      const { error } = await supabase.from(table).delete().eq('room_code', currentRoom);
+      if (error) {
+        showPopup("Reset thất bại: " + error.message, "error");
+      } else {
+        showPopup(`Đã reset danh sách ${isAnswer ? "đáp án" : "chuông"}!`);
+        if (isAnswer) answers = []; else buzzOrder = [];
+        
+        // ĐIỀU CHỈNH: Nếu reset chuông khi đang Mở (vĩnh viễn), cập nhật thời gian để tính lượt mới
+        if (!isAnswer && roomInfo && roomInfo.buzz_status === 'open') {
+             await supabase.from('rooms').update({
+                 buzz_open_time: getServerTimeNowISO()
+             }).eq('room_code', currentRoom);
+        }
+
+        renderAnswers();
+        renderBuzz();
+      }
     }
 
     async function resetRoomData(isAnswer) {
