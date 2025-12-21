@@ -325,7 +325,7 @@
         function formatTimeDisplay(isoDate, startTimeMs) {
             if (!startTimeMs || !isoDate) return "0.000s";
             const ts = new Date(isoDate).getTime();
-            let diff = ts - startTimeMs;
+            let diff = ts - startTimeMs - 5000; // Trừ đi 5s bù đắp delay
             if (diff < 0) diff = 0;
             return (diff / 1000).toFixed(3) + "s";
         }
