@@ -480,13 +480,34 @@
         };
 
         btnBuzz.onclick = async () => {
-            if (lockedBuzz || hasBuzzed) { answerInput.focus(); return; }
-            hasBuzzed = true; updateBuzzUI(true);
-            const clientTimeISO = new Date(getServerTimeNow()).toISOString();
-            const { error } = await supabase.from('buzzes').insert([{ room_code: myRoom, name: myName, created_at: clientTimeISO }]);
-            if (error) { hasBuzzed = false; updateBuzzUI(false); showPopup("Lỗi: " + error.message, "error"); }
-            else { showPopup("Đã bấm chuông!", "success"); }
-            answerInput.focus();
+            if (btnBuzz.disabled) return;
+
+            // Lấy thời điểm bấm ngay lập tức (High resolution)
+            const pressTime = new Date();
+
+            // Tạm thời disable để tránh spam
+            btnBuzz.disabled = true;
+
+            // Tính toán thời gian phản xạ dựa trên buzz_open_time của Host
+            const openTime = new Date(roomData.buzz_open_time);
+            const reactionTime = (pressTime - openTime) / 1000;
+
+            // Nếu bấm quá nhanh (trước cả khi DB kịp update mở), chặn lại hoặc để 0
+            const finalTime = reactionTime > 0 ? reactionTime : 0.001;
+
+            const { error } = await supabase.from("buzz_responses").insert([{
+                room_code: myRoom,
+                name: myName,
+                time_elapsed: finalTime
+            }]);
+
+            if (error) {
+                if (error.code === '23505') {
+                    showPopup("Bạn đã bấm chuông rồi!");
+                } else {
+                    btnBuzz.disabled = false;
+                }
+            }
         };
 
         function subscribeRealtime() {
