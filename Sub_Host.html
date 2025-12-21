@@ -1168,8 +1168,8 @@ async function updateRoomStatus(status, duration = 0, isAnswer = false) {
         // Đối với đáp án: Chỉ cập nhật ans_open_time nếu trước đó đang đóng (status khác 'open')
         // hoặc người dùng chủ động mở lại
         updateData = { 
-            ans_status: status, 
-            ans_duration: duration 
+            answer_status: status, 
+            answer_duration: duration 
         };
         if (status === 'open') {
             updateData.ans_open_time = now;
