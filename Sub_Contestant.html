@@ -540,72 +540,55 @@
         async function handleRoomUpdate(roomData) {
             if (!roomData) return;
 
-            // --- XỬ LÝ ĐÁP ÁN ---
-            const isAnswerOpen = (roomData.answer_status === 'pending_open' || roomData.answer_status === 'open');
+            /* ===================== ĐÁP ÁN ===================== */
+            const isAnswerOpen = (roomData.answer_status === 'open');
+            const answerOpenTime = roomData.answer_open_time;
 
-            if (isAnswerOpen) {
-                // QUAN TRỌNG: Nếu trước đó đang khóa (lockedAnswer = true) mà giờ mở, 
-                // thì đây chính là khoảnh khắc máy thí sinh nhận được lệnh MỞ.
-                if (lockedAnswer) {
-                    localAnswerStartTime = Date.now() + serverTimeOffset;
-                }
+            if (isAnswerOpen && answerOpenTime) {
+                currentAnswerStartTime = new Date(answerOpenTime).getTime();
 
-                if (roomData.answer_status === 'pending_open') {
-                    resetAnswerStatusBox();
-                    const start_iso = new Date(getServerTimeNow()).toISOString();
-                    currentAnswerStartTime = new Date(start_iso).getTime();
-                    await supabase.from('rooms').update({ answer_status: 'open', answer_open_time: start_iso }).eq('room_code', myRoom);
-                    updateAnswerUI(false);
-                    startTimer('answerCountdown', start_iso, roomData.answer_duration, () => updateAnswerUI(true));
-                } else {
-                    currentAnswerStartTime = roomData.answer_open_time ? new Date(roomData.answer_open_time).getTime() : 0;
-                    updateAnswerUI(false);
-                    startTimer('answerCountdown', roomData.answer_open_time, roomData.answer_duration, () => updateAnswerUI(true));
-                    await fetchMyLastAnswer();
-                }
+                updateAnswerUI(false);
+                startTimer(
+                    'answerCountdown',
+                    answerOpenTime,
+                    roomData.answer_duration,
+                    () => updateAnswerUI(true)
+                );
+
+                await fetchMyLastAnswer();
             } else {
-                // Trạng thái Khóa/Đóng
                 updateAnswerUI(true);
-                localAnswerStartTime = 0; // Reset mốc thời gian
-                document.getElementById('answerCountdown').innerText = "0.000s";
+                currentAnswerStartTime = 0;
                 if (answerInterval) clearInterval(answerInterval);
+                document.getElementById('answerCountdown').innerText = "0.000s";
                 answerStatusBox.innerText = "";
                 answerStatusBox.innerHTML = "";
             }
 
-            // --- XỬ LÝ CHUÔNG ---
-            const isBuzzActive = (roomData.buzz_status === 'open');
+            /* ===================== CHUÔNG ===================== */
+            const isBuzzOpen = (roomData.buzz_status === 'open');
             const buzzOpenTime = roomData.buzz_open_time;
 
-            if (isBuzzActive && buzzOpenTime) {
-                // Nếu đây là lượt bấm mới hoặc vừa được Reset
-                if (buzzOpenTime !== lastBuzzOpenTime) {
-                    hasBuzzed = false; // Mở khóa nút bấm cho thí sinh
-                    lastBuzzOpenTime = buzzOpenTime;
-                    console.log("Vòng mới bắt đầu!");
-                }
-
+            if (isBuzzOpen && buzzOpenTime) {
                 currentBuzzStartTime = new Date(buzzOpenTime).getTime();
 
-                // Nếu đã bấm rồi thì khóa, chưa bấm thì mở
-                updateBuzzUI(hasBuzzed);
+                updateBuzzUI(false);
+                startTimer(
+                    'buzzCountdown',
+                    buzzOpenTime,
+                    roomData.buzz_duration,
+                    () => updateBuzzUI(true)
+                );
 
-                // Xử lý đồng hồ đếm ngược
-                if (roomData.buzz_duration > 0) {
-                    startTimer('buzzCountdown', buzzOpenTime, roomData.buzz_duration, () => {
-                        updateBuzzUI(true); // Khóa khi hết giờ
-                    });
-                } else {
-                    document.getElementById('buzzCountdown').innerText = "Vĩnh viễn";
-                    if (buzzInterval) clearInterval(buzzInterval);
-                }
+                await fetchBuzzList();
             } else {
-                // Nếu Host khóa chuông
                 updateBuzzUI(true);
-                document.getElementById('buzzCountdown').innerText = "Đang khóa";
+                currentBuzzStartTime = 0;
                 if (buzzInterval) clearInterval(buzzInterval);
+                document.getElementById('buzzCountdown').innerText = "0.000s";
+                buzzOrder = [];
+                renderBuzzTable();
             }
-            fetchBuzzList();
         }
 
         document.addEventListener('keydown', (e) => {
