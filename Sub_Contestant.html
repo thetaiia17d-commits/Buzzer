@@ -577,23 +577,35 @@
             }
 
             // --- XỬ LÝ CHUÔNG ---
-            const isBuzzActive = (roomData.buzz_status !== 'locked') && roomData.buzz_open_time;
+            const isBuzzActive = (roomData.buzz_status === 'open');
+            const buzzOpenTime = roomData.buzz_open_time;
 
-            if (isBuzzActive) {
-                // KIỂM TRA NẾU ĐÂY LÀ LƯỢT MỞ CHUÔNG MỚI
-                if (roomData.buzz_open_time !== lastBuzzOpenTime) {
-                    hasBuzzed = false; // Reset trạng thái để thí sinh được bấm lại lượt này
-                    lastBuzzOpenTime = roomData.buzz_open_time;
-                    console.log("Lượt mở chuông mới bắt đầu!");
+            if (isBuzzActive && buzzOpenTime) {
+                // Nếu đây là lượt bấm mới hoặc vừa được Reset
+                if (buzzOpenTime !== lastBuzzOpenTime) {
+                    hasBuzzed = false; // Mở khóa nút bấm cho thí sinh
+                    lastBuzzOpenTime = buzzOpenTime;
+                    console.log("Vòng mới bắt đầu!");
                 }
 
-                currentBuzzStartTime = new Date(roomData.buzz_open_time).getTime();
-                updateBuzzUI(false);
-                startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
-                    updateBuzzUI(true);
-                });
+                currentBuzzStartTime = new Date(buzzOpenTime).getTime();
+
+                // Nếu đã bấm rồi thì khóa, chưa bấm thì mở
+                updateBuzzUI(hasBuzzed);
+
+                // Xử lý đồng hồ đếm ngược
+                if (roomData.buzz_duration > 0) {
+                    startTimer('buzzCountdown', buzzOpenTime, roomData.buzz_duration, () => {
+                        updateBuzzUI(true); // Khóa khi hết giờ
+                    });
+                } else {
+                    document.getElementById('buzzCountdown').innerText = "Vĩnh viễn";
+                    if (buzzInterval) clearInterval(buzzInterval);
+                }
             } else {
+                // Nếu Host khóa chuông
                 updateBuzzUI(true);
+                document.getElementById('buzzCountdown').innerText = "Đang khóa";
                 if (buzzInterval) clearInterval(buzzInterval);
             }
             fetchBuzzList();
