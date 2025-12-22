@@ -480,11 +480,8 @@
             btnSend.disabled = true;
 
             // TÍNH TOÁN: Thời gian từ lúc nhận tín hiệu đến lúc bấm (mili giây)
-            const thinkingTimeMs = performance.now() - localAnswerStartTime;
-
-            // TẠO TIMESTAMP: Thời điểm Host mở + Thời gian phản xạ thực tế của thí sinh
-            // Điều này triệt tiêu hoàn toàn sai số đồng bộ đồng hồ giữa các máy
-            const adjustedTimestamp = new Date(currentAnswerStartTime + thinkingTimeMs).toISOString();
+            const nowServerMs = Date.now() + serverTimeOffset;
+            const adjustedTimestamp = new Date(nowServerMs).toISOString();
 
             const { error } = await supabase.from('answers').insert([
                 { room_code: myRoom, name: myName, answer_text: text, created_at: adjustedTimestamp }
