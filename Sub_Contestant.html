@@ -547,7 +547,7 @@
                 // QUAN TRỌNG: Nếu trước đó đang khóa (lockedAnswer = true) mà giờ mở, 
                 // thì đây chính là khoảnh khắc máy thí sinh nhận được lệnh MỞ.
                 if (lockedAnswer) {
-                    localAnswerStartTime = performance.now();
+                    localAnswerStartTime = Date.now() + serverTimeOffset;
                 }
 
                 if (roomData.answer_status === 'pending_open') {
