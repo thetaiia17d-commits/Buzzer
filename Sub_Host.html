@@ -558,10 +558,9 @@
 
       const now = Date.now() + serverTimeOffset;
 
-      // Logic hiển thị trạng thái Chuông
-      // Nếu status là open/pending_open VÀ chưa hết giờ (hoặc duration=0)
+      // Trạng thái Chuông: Mở nếu status không phải locked VÀ (không giới hạn thời gian HOẶC chưa hết giờ)
       const isBuzzTimeValid = (buzzEndTime === 0 || now < buzzEndTime);
-      const isBuzzActuallyOpen = (roomInfo.buzz_status === 'open' || roomInfo.buzz_status === 'pending_open') && isBuzzTimeValid;
+      const isBuzzActuallyOpen = (roomInfo.buzz_status !== 'locked') && isBuzzTimeValid && roomInfo.buzz_open_time !== null;
 
       if (isBuzzActuallyOpen) {
         sB.className = "status-box open";
@@ -1164,11 +1163,11 @@
       let table = isAnswer ? 'answers' : 'buzzes';
       let successMsg = isAnswer ? "Đã xóa hết đáp án!" : "Đã Reset chuông!";
 
-      // 1. Xóa dữ liệu cũ trong bảng answers hoặc buzzes
+      // 1. Xóa dữ liệu các lượt bấm/đáp án cũ trên Database
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
       if (dataError) return showPopup("Lỗi xóa dữ liệu!", "error");
 
-      // 2. Cập nhật UI local của Host
+      // 2. Cập nhật giao diện Host ngay lập tức
       if (isAnswer) {
         answers = [];
         renderAnswers();
@@ -1177,25 +1176,30 @@
         renderBuzz();
       }
 
-      // 3. Cập nhật trạng thái Room
-      // Gửi resetBuzz: true để thí sinh reset biến hasBuzzed
-      const finalUpdate = isAnswer
-        ? { answer_open_time: null, answer_duration: 0, answer_status: 'locked' }
+      // 3. Cập nhật trạng thái Phòng (Sửa lỗi "Lỗi cập nhật phòng" tại đây)
+      // Chúng ta gộp các thay đổi vào 1 lần gọi duy nhất để tránh xung đột
+      const updates = isAnswer
+        ? {
+          answer_status: 'locked',
+          answer_open_time: null,
+          answer_duration: 0
+        }
         : {
+          buzz_status: 'locked',
           buzz_open_time: null,
           buzz_duration: 0,
-          buzz_status: 'locked',
-          resetBuzz: true  // Tín hiệu quan trọng để thí sinh bấm lại được
+          resetBuzz: true // Tín hiệu để Thí sinh đặt lại biến hasBuzzed
         };
 
-      const { error: roomError } = await supabase.from('rooms').update(finalUpdate).eq('room_code', currentRoom);
+      const { error: roomError } = await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
 
       if (roomError) {
+        console.error("Lỗi Supabase:", roomError);
         showPopup("Lỗi cập nhật phòng!", "error");
       } else {
         showPopup(successMsg);
 
-        // Sau 1 giây, tắt cờ resetBuzz để sẵn sàng cho phiên bấm tiếp theo
+        // Tắt cờ reset sau 1 giây để chuẩn bị cho lượt mới
         if (!isAnswer) {
           setTimeout(() => {
             supabase.from('rooms').update({ resetBuzz: false }).eq('room_code', currentRoom);

@@ -355,12 +355,19 @@
 
         function updateBuzzUI(shouldLock) {
             lockedBuzz = shouldLock;
-            if (shouldLock) {
-                btnBuzz.classList.add("locked");
+
+            // Nút chỉ bấm được khi: 
+            // 1. Host đang mở (shouldLock = false)
+            // 2. Người chơi CHƯA bấm trong lượt này (hasBuzzed = false)
+            if (!shouldLock && !hasBuzzed) {
+                btnBuzz.classList.remove("locked");
+                btnBuzz.innerText = "Bấm chuông";
             } else {
-                // Nút chỉ thực sự mở nếu chưa bấm trong phiên này
-                if (!hasBuzzed) {
-                    btnBuzz.classList.remove("locked");
+                btnBuzz.classList.add("locked");
+                if (hasBuzzed) {
+                    btnBuzz.innerText = "Đã bấm chuông";
+                } else {
+                    btnBuzz.innerText = "Đang khóa";
                 }
             }
         }
@@ -570,15 +577,17 @@
 
             // --- XỬ LÝ CHUÔNG ---
             // Nếu có mốc thời gian từ Host, coi như đã có thể bắt đầu
+            // Nếu Host gửi lệnh Reset (resetBuzz: true)
             if (roomData.resetBuzz === true) {
-                hasBuzzed = false;           // Mở khóa biến để có thể bấm lại
-                btnBuzz.classList.remove("locked"); // Mở khóa giao diện nút
+                hasBuzzed = false; // QUAN TRỌNG: Cho phép người chơi bấm lại ở lượt mới
+                btnBuzz.classList.remove("locked");
                 buzzOrder = [];
                 renderBuzzTable();
+                // Không return ở đây để tiếp tục xử lý các logic hiển thị bên dưới
             }
 
             const hasTimeFromHost = roomData.buzz_open_time != null;
-            const isBuzzActive = (roomData.buzz_status === 'open' || roomData.buzz_status === 'pending_open') && hasTimeFromHost;
+            const isBuzzActive = (roomData.buzz_status !== 'locked') && hasTimeFromHost;
 
             if (isBuzzActive) {
                 currentBuzzStartTime = new Date(roomData.buzz_open_time).getTime();
@@ -586,11 +595,10 @@
                 // Cập nhật giao diện đếm ngược
                 updateBuzzUI(false);
                 startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
-                    updateBuzzUI(true); // Tự khóa khi hết giờ
+                    updateBuzzUI(true); // Tự khóa khi hết giờ của phiên này
                 });
             } else {
-                // Nếu không ở trạng thái active, hoặc đã hết phiên
-                updateBuzzUI(true);
+                updateBuzzUI(true); // Khóa nút khi Host chưa mở hoặc đã khóa
                 document.getElementById('buzzCountdown').innerText = "0.000s";
                 if (buzzInterval) clearInterval(buzzInterval);
             }
