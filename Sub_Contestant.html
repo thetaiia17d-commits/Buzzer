@@ -539,6 +539,7 @@
             buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); }).subscribe();
         }
 
+        let lastBuzzOpenTime = null;
         async function handleRoomUpdate(roomData) {
             if (!roomData) return;
 
@@ -576,30 +577,23 @@
             }
 
             // --- XỬ LÝ CHUÔNG ---
-            // Nếu có mốc thời gian từ Host, coi như đã có thể bắt đầu
-            // Nếu Host gửi lệnh Reset (resetBuzz: true)
-            if (roomData.resetBuzz === true) {
-                hasBuzzed = false; // QUAN TRỌNG: Cho phép người chơi bấm lại ở lượt mới
-                btnBuzz.classList.remove("locked");
-                buzzOrder = [];
-                renderBuzzTable();
-                // Không return ở đây để tiếp tục xử lý các logic hiển thị bên dưới
-            }
-
-            const hasTimeFromHost = roomData.buzz_open_time != null;
-            const isBuzzActive = (roomData.buzz_status !== 'locked') && hasTimeFromHost;
+            const isBuzzActive = (roomData.buzz_status !== 'locked') && roomData.buzz_open_time;
 
             if (isBuzzActive) {
-                currentBuzzStartTime = new Date(roomData.buzz_open_time).getTime();
+                // KIỂM TRA NẾU ĐÂY LÀ LƯỢT MỞ CHUÔNG MỚI
+                if (roomData.buzz_open_time !== lastBuzzOpenTime) {
+                    hasBuzzed = false; // Reset trạng thái để thí sinh được bấm lại lượt này
+                    lastBuzzOpenTime = roomData.buzz_open_time;
+                    console.log("Lượt mở chuông mới bắt đầu!");
+                }
 
-                // Cập nhật giao diện đếm ngược
+                currentBuzzStartTime = new Date(roomData.buzz_open_time).getTime();
                 updateBuzzUI(false);
                 startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
-                    updateBuzzUI(true); // Tự khóa khi hết giờ của phiên này
+                    updateBuzzUI(true);
                 });
             } else {
-                updateBuzzUI(true); // Khóa nút khi Host chưa mở hoặc đã khóa
-                document.getElementById('buzzCountdown').innerText = "0.000s";
+                updateBuzzUI(true);
                 if (buzzInterval) clearInterval(buzzInterval);
             }
             fetchBuzzList();

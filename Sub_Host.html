@@ -1163,50 +1163,41 @@
       let table = isAnswer ? 'answers' : 'buzzes';
       let successMsg = isAnswer ? "Đã xóa hết đáp án!" : "Đã Reset chuông!";
 
-      // 1. Xóa dữ liệu các lượt bấm/đáp án cũ trên Database
+      // Xóa dữ liệu trong bảng buzzes hoặc answers
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
       if (dataError) return showPopup("Lỗi xóa dữ liệu!", "error");
 
-      // 2. Cập nhật giao diện Host ngay lập tức
-      if (isAnswer) {
-        answers = [];
-        renderAnswers();
-      } else {
-        buzzOrder = [];
-        renderBuzz();
-      }
-
-      // 3. Cập nhật trạng thái Phòng (Sửa lỗi "Lỗi cập nhật phòng" tại đây)
-      // Chúng ta gộp các thay đổi vào 1 lần gọi duy nhất để tránh xung đột
+      // Cập nhật trạng thái phòng (Chỉ cập nhật các cột thực sự có trong DB)
       const updates = isAnswer
-        ? {
-          answer_status: 'locked',
-          answer_open_time: null,
-          answer_duration: 0
-        }
-        : {
-          buzz_status: 'locked',
-          buzz_open_time: null,
-          buzz_duration: 0,
-          resetBuzz: true // Tín hiệu để Thí sinh đặt lại biến hasBuzzed
-        };
+        ? { answer_status: 'locked', answer_open_time: null, answer_duration: 0 }
+        : { buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 };
 
       const { error: roomError } = await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
 
       if (roomError) {
-        console.error("Lỗi Supabase:", roomError);
-        showPopup("Lỗi cập nhật phòng!", "error");
+        showPopup("Lỗi cập nhật phòng: " + roomError.message, "error");
       } else {
+        if (isAnswer) { answers = []; renderAnswers(); }
+        else { buzzOrder = []; renderBuzz(); }
         showPopup(successMsg);
-
-        // Tắt cờ reset sau 1 giây để chuẩn bị cho lượt mới
-        if (!isAnswer) {
-          setTimeout(() => {
-            supabase.from('rooms').update({ resetBuzz: false }).eq('room_code', currentRoom);
-          }, 1000);
-        }
       }
     }
+
+    // 2. Cập nhật các nút Mở chuông để tự động Reset lượt mới
+    // Tìm đoạn code trong window.onload và sửa lại:
+    unlockBuzzLimited.onclick = async () => {
+      const duration = parseFloat(buzzDurationInput.value || 0);
+      if (duration <= 0) return showPopup("Thời gian phải > 0", "error");
+
+      // TỰ ĐỘNG XÓA LƯỢT BẤM CŨ TRƯỚC KHI MỞ
+      await supabase.from('buzzes').delete().eq('room_code', currentRoom);
+      updateRoomStatus('open', duration, false);
+    };
+
+    unlockBuzzPermanent.onclick = async () => {
+      await supabase.from('buzzes').delete().eq('room_code', currentRoom);
+      updateRoomStatus('open', 0, false);
+    };
 
     window.onload = () => {
       roomInfo = document.getElementById("roomInfo");
