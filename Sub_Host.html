@@ -582,7 +582,7 @@
       // Chuông
       if (roomInfo.buzz_status === 'open' && (buzzDurationLimit === 0 || now < buzzEndTime)) {
         sB.className = "status-box open";
-        sB.innerText = "Chuông: 🔔 Đang mở " + (buzzDurationLimit > 0 ? "" : "(Vĩnh viễn)");
+        sB.innerText = "Chuông: 🔔 Đang mở ";
       } else {
         sB.className = "status-box locked";
         sB.innerText = "Chuông: 🚫 Đang khóa";
@@ -591,7 +591,7 @@
       // Đáp án
       if (roomInfo.answer_status === 'open' && (answerDurationLimit === 0 || now < answerEndTime)) {
         sA.className = "status-box open";
-        sA.innerText = "Đáp án: 🔓 Đang mở " + (answerDurationLimit > 0 ? "" : "(Vĩnh viễn)");
+        sA.innerText = "Đáp án: 🔓 Đang mở ";
       } else {
         sA.className = "status-box locked";
         sA.innerText = "Đáp án: 🔒 Đang khóa";
@@ -1178,7 +1178,7 @@
       if (error) showPopup("Lỗi cập nhật: " + error.message, "error");
       else {
         // Cập nhật lại giao diện Host ngay lập tức để ô Trạng thái đổi màu/chữ
-        fetchRoomData();
+        fetchRoomStatus();
       }
     }
 
@@ -1220,7 +1220,7 @@
         if (isAnswer) { answers = []; renderAnswers(); }
         else { buzzOrder = []; renderBuzz(); }
 
-        await fetchRoomData(); // Tải lại roomInfo để hàm updateUI nhận dữ liệu mới nhất
+        await fetchRoomStatus(); // Tải lại roomInfo để hàm updateUI nhận dữ liệu mới nhất
         showPopup(successMsg);
 
       } catch (err) {
