@@ -556,28 +556,29 @@
       const sB = document.getElementById("statusBuzz");
       if (!sA || !sB || !roomInfo) return;
 
-      // UI Đáp án
-      if (roomInfo.answer_status === 'locked') {
-        sA.className = "status-box locked";
-        sA.innerText = "Đáp án: 🔒 Đang khóa";
-      } else if (roomInfo.answer_status === 'pending_open') {
-        sA.className = "status-box locked"; // Để màu cam/đỏ nhưng vẫn cho phép timer chạy
-        sA.innerText = "Đáp án: ⏱️ Đang đồng bộ";
-      } else {
-        sA.className = "status-box open";
-        sA.innerText = "Đáp án: 🔓 Đang mở";
-      }
+      const now = Date.now() + serverTimeOffset;
 
-      // UI Chuông
-      if (roomInfo.buzz_status === 'locked') {
-        sB.className = "status-box locked";
-        sB.innerText = "Chuông: 🚫 Đang khóa";
-      } else if (roomInfo.buzz_status === 'pending_open') {
-        sB.className = "status-box locked";
-        sB.innerText = "Chuông: ⏱️ Đang đồng bộ";
-      } else {
+      // Logic hiển thị trạng thái Chuông
+      // Nếu status là open/pending_open VÀ chưa hết giờ (hoặc duration=0)
+      const isBuzzTimeValid = (buzzEndTime === 0 || now < buzzEndTime);
+      const isBuzzActuallyOpen = (roomInfo.buzz_status === 'open' || roomInfo.buzz_status === 'pending_open') && isBuzzTimeValid;
+
+      if (isBuzzActuallyOpen) {
         sB.className = "status-box open";
         sB.innerText = "Chuông: 🔔 Đang mở";
+      } else {
+        sB.className = "status-box locked";
+        sB.innerText = "Chuông: 🚫 Đang khóa";
+      }
+
+      // Tương tự cho Đáp án
+      const isAnswerActuallyOpen = roomInfo.answer_status === 'open' && (answerEndTime === 0 || now < answerEndTime);
+      if (isAnswerActuallyOpen) {
+        sA.className = "status-box open";
+        sA.innerText = "Đáp án: 🔓 Đang mở";
+      } else {
+        sA.className = "status-box locked";
+        sA.innerText = "Đáp án: 🔒 Đang khóa";
       }
     }
 
@@ -1161,25 +1162,13 @@
       if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
 
       let table = isAnswer ? 'answers' : 'buzzes';
-      let successMsg = "";
-      let errorMsg = "";
+      let successMsg = isAnswer ? "Đã xóa hết đáp án!" : "Đã Reset chuông!";
 
-      let finalStatus = isAnswer ? 'locked' : (
-        (roomInfo && roomInfo.buzz_status === 'open' && roomInfo.buzz_duration === 0)
-          ? 'pending_open' : 'locked'
-      );
-
-      if (isAnswer) {
-        successMsg = "Đã xóa hết đáp án và khóa!";
-        errorMsg = "Lỗi reset đáp án!";
-      } else {
-        successMsg = finalStatus === 'pending_open' ? "Đã Reset chuông!" : "Đã xóa hết chuông (Reset) và khóa!";
-        errorMsg = "Lỗi reset chuông!";
-      }
-
+      // 1. Xóa dữ liệu cũ trong bảng answers hoặc buzzes
       const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
-      if (dataError) return showPopup(errorMsg, "error");
+      if (dataError) return showPopup("Lỗi xóa dữ liệu!", "error");
 
+      // 2. Cập nhật UI local của Host
       if (isAnswer) {
         answers = [];
         renderAnswers();
@@ -1188,23 +1177,30 @@
         renderBuzz();
       }
 
-      const temporaryTime = getServerTimeNowISO();
-      const tempUpdate = isAnswer
-        ? { answer_open_time: temporaryTime }
-        : { buzz_open_time: temporaryTime };
-
-      await supabase.from('rooms').update(tempUpdate).eq('room_code', currentRoom);
-
+      // 3. Cập nhật trạng thái Room
+      // Gửi resetBuzz: true để thí sinh reset biến hasBuzzed
       const finalUpdate = isAnswer
-        ? { answer_open_time: null, answer_duration: 0, answer_status: finalStatus }
-        : { buzz_open_time: null, buzz_duration: 0, buzz_status: finalStatus };
+        ? { answer_open_time: null, answer_duration: 0, answer_status: 'locked' }
+        : {
+          buzz_open_time: null,
+          buzz_duration: 0,
+          buzz_status: 'locked',
+          resetBuzz: true  // Tín hiệu quan trọng để thí sinh bấm lại được
+        };
 
       const { error: roomError } = await supabase.from('rooms').update(finalUpdate).eq('room_code', currentRoom);
 
       if (roomError) {
-        showPopup(errorMsg, "error");
+        showPopup("Lỗi cập nhật phòng!", "error");
       } else {
         showPopup(successMsg);
+
+        // Sau 1 giây, tắt cờ resetBuzz để sẵn sàng cho phiên bấm tiếp theo
+        if (!isAnswer) {
+          setTimeout(() => {
+            supabase.from('rooms').update({ resetBuzz: false }).eq('room_code', currentRoom);
+          }, 1000);
+        }
       }
     }
 

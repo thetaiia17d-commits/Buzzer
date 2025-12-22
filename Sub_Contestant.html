@@ -353,14 +353,15 @@
             answerInput.value = "";
         }
 
-        function updateBuzzUI(isGloballyLocked) {
-            lockedBuzz = isGloballyLocked;
-            if (isGloballyLocked || hasBuzzed) {
+        function updateBuzzUI(shouldLock) {
+            lockedBuzz = shouldLock;
+            if (shouldLock) {
                 btnBuzz.classList.add("locked");
-                btnBuzz.disabled = true;
             } else {
-                btnBuzz.classList.remove("locked");
-                btnBuzz.disabled = false;
+                // Nút chỉ thực sự mở nếu chưa bấm trong phiên này
+                if (!hasBuzzed) {
+                    btnBuzz.classList.remove("locked");
+                }
             }
         }
 
@@ -569,28 +570,26 @@
 
             // --- XỬ LÝ CHUÔNG ---
             // Nếu có mốc thời gian từ Host, coi như đã có thể bắt đầu
+            if (roomData.resetBuzz === true) {
+                hasBuzzed = false;           // Mở khóa biến để có thể bấm lại
+                btnBuzz.classList.remove("locked"); // Mở khóa giao diện nút
+                buzzOrder = [];
+                renderBuzzTable();
+            }
+
             const hasTimeFromHost = roomData.buzz_open_time != null;
             const isBuzzActive = (roomData.buzz_status === 'open' || roomData.buzz_status === 'pending_open') && hasTimeFromHost;
 
             if (isBuzzActive) {
                 currentBuzzStartTime = new Date(roomData.buzz_open_time).getTime();
 
-                // Tự động reset trạng thái máy khách khi Host yêu cầu reset hoặc chuyển từ locked -> open
-                if (roomData.resetBuzz === true || (lockedBuzz && !hasBuzzed)) {
-                    buzzOrder = [];
-                    hasBuzzed = false;
-                    renderBuzzTable();
-                }
-
                 // Cập nhật giao diện đếm ngược
                 updateBuzzUI(false);
                 startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
-                    updateBuzzUI(true); // Tự khóa khi hết giờ local
+                    updateBuzzUI(true); // Tự khóa khi hết giờ
                 });
-
-                if (roomData.resetBuzz) showPopup("Host đã reset chuông!");
             } else {
-                // Trạng thái Khóa hoặc chưa có mốc thời gian
+                // Nếu không ở trạng thái active, hoặc đã hết phiên
                 updateBuzzUI(true);
                 document.getElementById('buzzCountdown').innerText = "0.000s";
                 if (buzzInterval) clearInterval(buzzInterval);
