@@ -1021,7 +1021,7 @@
         .eq('room_code', currentRoom)
         // QUAN TRỌNG: Sắp xếp theo số giây thực tế bấm (elapsed) tăng dần
         // Ai có số giây nhỏ hơn (bấm nhanh hơn) sẽ luôn đứng trên
-        .order('elapsed', { ascending: true });
+        .order('elapsed_time', { ascending: true });
 
       if (error) {
         console.error("Lỗi lấy danh sách chuông:", error.message);
@@ -1055,7 +1055,7 @@
 
     function handleRoomUpdate(room) {
       roomInfo = room;
-
+      const currentServerTime = Date.now() + serverTimeOffset;
       // XỬ LÝ ĐÁP ÁN
       const newAnswerStartTime = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
       // Cho phép chạy đếm giờ nếu đã có mốc thời gian (kể cả khi đang pending_open)
@@ -1064,7 +1064,6 @@
         answerDurationLimit = room.answer_duration || 0;
         answerEndTime = answerStartTime > 0 && answerDurationLimit > 0 ? answerStartTime + answerDurationLimit * 1000 : 0;
 
-        const currentServerTime = Date.now() + serverTimeOffset;
         lockedAnswer = (answerDurationLimit > 0 && answerEndTime > 0 && answerEndTime <= currentServerTime);
         fetchAnswers();
       } else {
