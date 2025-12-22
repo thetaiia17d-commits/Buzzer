@@ -1041,16 +1041,14 @@
 
       // XỬ LÝ CHUÔNG
       const newBuzzStartTime = room.buzz_open_time ? new Date(room.buzz_open_time).getTime() : 0;
-      const buzzDuration = room.buzz_duration || 0;
-
-      if (room.buzz_status === 'open' || (room.buzz_status === 'pending_open' && newBuzzStartTime > 0)) {
+      // Cho phép chạy timer ngay cả khi là pending_open
+      if (newBuzzStartTime > 0 && room.buzz_status !== 'locked') {
         buzzStartTime = newBuzzStartTime;
-        buzzDurationLimit = buzzDuration;
+        buzzDurationLimit = room.buzz_duration || 0;
         buzzEndTime = buzzStartTime > 0 && buzzDurationLimit > 0 ? buzzStartTime + buzzDurationLimit * 1000 : 0;
 
-        const currentServerTime = Date.now() + serverTimeOffset;
-        // Quan trọng: Chỉ khóa nếu thực sự hết giờ, không khóa khi đang chờ đồng bộ
-        lockedBuzz = (buzzDurationLimit > 0 && buzzEndTime > 0 && buzzEndTime <= currentServerTime);
+        // Nếu hết giờ thì khóa, nếu chưa thì cho phép chạy
+        lockedBuzz = (buzzDurationLimit > 0 && buzzEndTime <= currentServerTime);
         fetchBuzz();
       } else {
         buzzStartTime = 0;
@@ -1138,61 +1136,25 @@
       });
     }
 
+    // Tìm hàm updateRoomStatus và sửa đoạn gửi dữ liệu lên Supabase
     async function updateRoomStatus(status, duration, isAnswer) {
-      if (!currentRoom) return showPopup("Chưa vào phòng!", "error");
+      if (!currentRoom) return;
 
-      let updateData = {};
-      let statusField = isAnswer ? 'answer_status' : 'buzz_status';
-      let timeField = isAnswer ? 'answer_open_time' : 'buzz_open_time';
-      let durationField = isAnswer ? 'answer_duration' : 'buzz_duration';
-      let errorMsg = isAnswer ? "Lỗi cập nhật!" : "Lỗi cập nhật!";
-      let successMsg = isAnswer ? "Đã khóa đáp án!" : "Đã khóa chuông!";
+      // Tạo mốc thời gian ngay tại đây để tránh chờ thí sinh tạo
+      const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
 
+      const updates = isAnswer ? {
+        answer_status: status,
+        answer_duration: duration,
+        answer_open_time: status === 'open' ? nowISO : (status === 'pending_open' ? nowISO : null)
+      } : {
+        buzz_status: status,
+        buzz_duration: duration,
+        buzz_open_time: status === 'open' ? nowISO : (status === 'pending_open' ? nowISO : null)
+      };
 
-      if (status === 'open') {
-        updateData[statusField] = 'pending_open';
-        updateData[timeField] = null;
-        updateData[durationField] = duration;
-
-        const optimisticRoom = {
-          answer_status: isAnswer ? 'pending_open' : (roomInfo ? roomInfo.answer_status : 'locked'),
-          answer_open_time: null,
-          answer_duration: isAnswer ? duration : (roomInfo ? roomInfo.answer_duration : 0),
-
-          buzz_status: !isAnswer ? 'pending_open' : (roomInfo ? roomInfo.buzz_status : 'locked'),
-          buzz_open_time: null,
-          buzz_duration: !isAnswer ? duration : (roomInfo ? roomInfo.buzz_duration : 0)
-        };
-        handleRoomUpdate(optimisticRoom);
-        showPopup(isAnswer ? "Đáp án: Đã gửi lệnh, đang chờ thí sinh đồng bộ..." : "Chuông: Đã gửi lệnh, đang chờ thí sinh đồng bộ...");
-
-        if (isAnswer) {
-          await supabase.from('answers').delete().eq('room_code', currentRoom);
-        } else {
-          await supabase.from('buzzes').delete().eq('room_code', currentRoom);
-        }
-
-      } else if (status === 'locked') {
-        updateData[statusField] = 'locked';
-        updateData[timeField] = null;
-        updateData[durationField] = 0;
-
-        const optimisticRoom = {
-          answer_status: isAnswer ? 'locked' : (roomInfo ? roomInfo.answer_status : 'locked'),
-          answer_open_time: null,
-          answer_duration: isAnswer ? 0 : (roomInfo ? roomInfo.answer_duration : 0),
-
-          buzz_status: !isAnswer ? 'locked' : (roomInfo ? roomInfo.buzz_status : 'locked'),
-          buzz_open_time: null,
-          buzz_duration: !isAnswer ? 0 : (roomInfo ? roomInfo.buzz_duration : 0)
-        };
-        handleRoomUpdate(optimisticRoom);
-        showPopup(successMsg);
-      }
-
-      const { error } = await supabase.from('rooms').update(updateData).eq('room_code', currentRoom);
-
-      if (error) showPopup(errorMsg + ": " + error.message, "error");
+      const { error } = await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
+      if (error) showPopup("Lỗi cập nhật: " + error.message, "error");
     }
 
     async function resetRoomData(isAnswer) {

@@ -496,25 +496,25 @@
 
         btnBuzz.onclick = async () => {
             if (lockedBuzz || hasBuzzed || !myRoom || !myName) return;
+
+            // Chặn bấm nhiều lần ngay lập tức
             hasBuzzed = true;
             btnBuzz.classList.add("locked");
 
-            // Lấy thời điểm hiện tại đã được đồng bộ với Server
-            const pressTimeTs = getServerTimeNow();
-            const pressTimeISO = new Date(pressTimeTs).toISOString();
+            const nowServer = Date.now() + serverTimeOffset; // Dùng mốc đồng bộ
+            const pressTimeISO = new Date(nowServer).toISOString();
 
             const { error } = await supabase.from('buzzes').insert([{
                 room_code: myRoom,
                 name: myName,
-                created_at: pressTimeISO // Gửi thời gian bấm thực tế (đã đồng bộ) lên DB
+                created_at: pressTimeISO
             }]);
 
             if (error) {
-                console.error(error.message);
                 hasBuzzed = false;
                 btnBuzz.classList.remove("locked");
+                console.error("Lỗi bấm chuông:", error.message);
             }
-            answerInput.focus();
         };
 
         function subscribeRealtime() {
@@ -568,46 +568,35 @@
             }
 
             // --- XỬ LÝ CHUÔNG ---
-            const isBuzzOpen = (roomData.buzz_status === 'pending_open' || roomData.buzz_status === 'open' || roomData.resetBuzz === true);
+            // Nếu có mốc thời gian từ Host, coi như đã có thể bắt đầu
+            const hasTimeFromHost = roomData.buzz_open_time != null;
+            const isBuzzActive = (roomData.buzz_status === 'open' || roomData.buzz_status === 'pending_open') && hasTimeFromHost;
 
-            // Tìm đến phần logic: if (isBuzzOpen) { ... }
-            if (isBuzzOpen) {
-                // Luôn cập nhật mốc bắt đầu từ Server ISO String
-                currentBuzzStartTime = roomData.buzz_open_time ? new Date(roomData.buzz_open_time).getTime() : 0;
+            if (isBuzzActive) {
+                currentBuzzStartTime = new Date(roomData.buzz_open_time).getTime();
 
-                if (roomData.buzz_status === 'pending_open' || roomData.resetBuzz === true) {
+                // Tự động reset trạng thái máy khách khi Host yêu cầu reset hoặc chuyển từ locked -> open
+                if (roomData.resetBuzz === true || (lockedBuzz && !hasBuzzed)) {
                     buzzOrder = [];
                     hasBuzzed = false;
                     renderBuzzTable();
-
-                    // Nếu máy này nhận được pending_open mà chưa có mốc thời gian trên DB
-                    if (!roomData.buzz_open_time || roomData.resetBuzz === true) {
-                        const b_start_iso = getServerTimeNowISO(); // Dùng hàm helper lấy ISO chuẩn
-
-                        supabase.from('rooms').update({
-                            buzz_status: 'open',
-                            buzz_open_time: b_start_iso,
-                            resetBuzz: false
-                        }).eq('room_code', myRoom).then();
-                    } else {
-                        // Nếu đã có mốc nhưng status vẫn là pending, hỗ trợ chuyển sang open
-                        if (roomData.buzz_status === 'pending_open') {
-                            supabase.from('rooms').update({ buzz_status: 'open' }).eq('room_code', myRoom).then();
-                        }
-                    }
                 }
 
-                // Chạy đồng hồ đếm ngược luôn dựa trên mốc Server
+                // Cập nhật giao diện đếm ngược
                 updateBuzzUI(false);
-                startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => updateBuzzUI(true));
+                startTimer('buzzCountdown', roomData.buzz_open_time, roomData.buzz_duration, () => {
+                    updateBuzzUI(true); // Tự khóa khi hết giờ local
+                });
+
+                if (roomData.resetBuzz) showPopup("Host đã reset chuông!");
             } else {
+                // Trạng thái Khóa hoặc chưa có mốc thời gian
                 updateBuzzUI(true);
                 document.getElementById('buzzCountdown').innerText = "0.000s";
                 if (buzzInterval) clearInterval(buzzInterval);
             }
             fetchBuzzList();
         }
-
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey && document.activeElement === answerInput) {
