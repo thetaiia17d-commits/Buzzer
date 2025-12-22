@@ -558,23 +558,50 @@
 
       const now = Date.now() + serverTimeOffset;
 
-      // Trạng thái Chuông: Mở nếu status không phải locked VÀ (không giới hạn thời gian HOẶC chưa hết giờ)
-      const isBuzzTimeValid = (buzzEndTime === 0 || now < buzzEndTime);
-      const isBuzzActuallyOpen = (roomInfo.buzz_status !== 'locked') && isBuzzTimeValid && roomInfo.buzz_open_time !== null;
+      // --- XỬ LÝ TRẠNG THÁI CHUÔNG ---
+      // Lấy thời gian kết thúc dựa trên roomInfo mới nhất
+      let bEndTime = 0;
+      if (roomInfo.buzz_open_time && roomInfo.buzz_duration > 0) {
+        bEndTime = new Date(roomInfo.buzz_open_time).getTime() + (roomInfo.buzz_duration * 1000);
+      }
+
+      const isBuzzTimeValid = (roomInfo.buzz_duration === 0 || now < bEndTime);
+      const isBuzzActuallyOpen = (roomInfo.buzz_status === 'open') && isBuzzTimeValid;
 
       if (isBuzzActuallyOpen) {
         sB.className = "status-box open";
-        sB.innerText = "Chuông: 🔔 Đang mở";
+        let text = "Chuông: 🔔 Đang mở";
+        if (roomInfo.buzz_duration > 0) {
+          let remain = Math.max(0, (bEndTime - now) / 1000);
+          text += ` (${remain.toFixed(1)}s)`; // Hiển thị đếm ngược trên Host
+        } else {
+          text += " (Vĩnh viễn)";
+        }
+        sB.innerText = text;
       } else {
         sB.className = "status-box locked";
         sB.innerText = "Chuông: 🚫 Đang khóa";
       }
 
-      // Tương tự cho Đáp án
-      const isAnswerActuallyOpen = roomInfo.answer_status === 'open' && (answerEndTime === 0 || now < answerEndTime);
+      // --- XỬ LÝ TRẠNG THÁI ĐÁP ÁN ---
+      let aEndTime = 0;
+      if (roomInfo.answer_open_time && roomInfo.answer_duration > 0) {
+        aEndTime = new Date(roomInfo.answer_open_time).getTime() + (roomInfo.answer_duration * 1000);
+      }
+
+      const isAnswerTimeValid = (roomInfo.answer_duration === 0 || now < aEndTime);
+      const isAnswerActuallyOpen = (roomInfo.answer_status === 'open') && isAnswerTimeValid;
+
       if (isAnswerActuallyOpen) {
         sA.className = "status-box open";
-        sA.innerText = "Đáp án: 🔓 Đang mở";
+        let text = "Đáp án: 🔓 Đang mở";
+        if (roomInfo.answer_duration > 0) {
+          let remain = Math.max(0, (aEndTime - now) / 1000);
+          text += ` (${remain.toFixed(1)}s)`;
+        } else {
+          text += " (Vĩnh viễn)";
+        }
+        sA.innerText = text;
       } else {
         sA.className = "status-box locked";
         sA.innerText = "Đáp án: 🔒 Đang khóa";
@@ -1170,56 +1197,41 @@
       try {
         // 1. Xóa dữ liệu cũ trong bảng buzzes hoặc answers
         const { error: dataError } = await supabase.from(table).delete().eq('room_code', currentRoom);
-        if (dataError) throw new Error("Lỗi xóa dữ liệu: " + dataError.message);
+        if (dataError) throw dataError;
 
-        // 2. Lấy trạng thái hiện tại của phòng từ Database để kiểm tra logic
-        const { data: roomData, error: fetchError } = await supabase
-          .from('rooms')
-          .select('*')
-          .eq('room_code', currentRoom)
-          .single();
-
-        if (fetchError) throw new Error("Lỗi lấy thông tin phòng!");
-
+        // 2. Logic cập nhật trạng thái phòng
         let updates = {};
-        const nowISO = new Date(Date.now() + (typeof serverTimeOffset !== 'undefined' ? serverTimeOffset : 0)).toISOString();
+        const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
 
         if (isAnswer) {
-          // Đáp án: Giữ nguyên logic cũ là khóa lại
+          // Đáp án: Luôn khóa lại sau khi Reset
           updates = { answer_status: 'locked', answer_open_time: null, answer_duration: 0 };
         } else {
-          // Chuông: Kiểm tra nếu đang "Mở chuông vĩnh viễn"
-          if (roomData.buzz_status === 'open' && (roomData.buzz_duration === 0 || roomData.buzz_duration === null)) {
-            // Tự động mở lại: Chỉ cập nhật mốc thời gian mới để máy thí sinh reset nút bấm
+          // Chuông: Kiểm tra xem có phải đang ở chế độ Vĩnh viễn không
+          // roomInfo là biến chứa dữ liệu phòng hiện tại mà Host đang theo dõi
+          if (roomInfo.buzz_status === 'open' && (roomInfo.buzz_duration === 0 || roomInfo.buzz_duration === null)) {
+            // Nếu đang mở vĩnh viễn: Chỉ cập nhật mốc thời gian mới để thí sinh bấm lại ngay
             updates = { buzz_open_time: nowISO };
-            successMsg = "Đã làm mới lượt bấm (Vĩnh viễn)!";
+            successMsg = "Đã Reset chuông!";
           } else {
-            // Các trường hợp khác (Đang khóa hoặc Mở có giới hạn): Khóa lại hoàn toàn
+            // Nếu đang mở giới hạn hoặc đang khóa: Reset về trạng thái Khóa
             updates = { buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 };
           }
         }
 
-        // 3. Cập nhật bảng rooms
         const { error: roomError } = await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
-        if (roomError) throw new Error("Lỗi cập nhật phòng: " + roomError.message);
+        if (roomError) throw roomError;
 
-        // 4. Cập nhật giao diện Host
-        if (isAnswer) {
-          answers = [];
-          if (typeof renderAnswers === 'function') renderAnswers();
-        } else {
-          buzzOrder = [];
-          if (typeof renderBuzz === 'function') renderBuzz();
-        }
+        // 3. Cập nhật UI ngay lập tức
+        if (isAnswer) { answers = []; renderAnswers(); }
+        else { buzzOrder = []; renderBuzz(); }
 
+        await fetchRoomData(); // Tải lại roomInfo để hàm updateUI nhận dữ liệu mới nhất
         showPopup(successMsg);
 
-        // Cập nhật lại bảng trạng thái trên màn hình Host
-        if (typeof fetchRoomData === 'function') fetchRoomData();
-
-      } catch (error) {
-        showPopup(error.message, "error");
-        console.error(error);
+      } catch (err) {
+        console.error(err);
+        showPopup("Lỗi: " + err.message, "error");
       }
     }
 
