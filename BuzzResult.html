@@ -51,13 +51,12 @@
             color: blue;
         }
 
-        /* Định dạng dòng thông báo mặc định */
+        /* Lớp CSS cho dòng thông báo màu tím */
         .no-signal {
-            text-align: center;
-            color: purple !important; /* Chỉnh màu tím theo yêu cầu */
+            text-align: center; 
+            color: purple !important; 
             font-size: 1.2em;
             padding: 20px;
-            font-weight: bold;
         }
     </style>
 </head>
@@ -92,10 +91,9 @@
             }
             var { data } = await supabase.from('rooms').select('*').eq('room_code', roomCode).single();
             if (data) {
+                // Nếu buzz_open_time bị null (do Reset), đưa mốc thời gian về 0
                 buzzStartTime = data.buzz_open_time ? new Date(data.buzz_open_time).getTime() : 0;
                 document.getElementById("roomInfo").innerText = "Phòng: " + roomCode;
-            } else {
-                document.getElementById("roomInfo").innerText = "Phòng " + roomCode + " không tồn tại!";
             }
         }
 
@@ -126,7 +124,7 @@
         function render() {
             var container = document.getElementById("resultsContainer");
             
-            // Nếu danh sách trống (sau khi Host Reset), hiện dòng chữ màu tím
+            // Xử lý khi Reset: Nếu danh sách trống, hiện dòng chữ màu tím
             if (!buzzList || buzzList.length === 0) {
                 container.innerHTML = '<div class="no-signal">Chưa có tín hiệu chuông...</div>';
                 return;
@@ -148,19 +146,19 @@
             await fetchBuzzResults();
 
             if (roomCode) {
-                // Lắng nghe thay đổi bảng buzzes (Thêm mới hoặc Xóa sạch khi Reset)
+                // LẮNG NGHE BẢNG BUZZES: Khi Host Reset, dữ liệu bị xóa (event DELETE)
                 supabase.channel('buzz_results_realtime')
                     .on('postgres_changes', { 
-                        event: '*', 
+                        event: '*', // Lắng nghe mọi thay đổi bao gồm DELETE
                         schema: 'public', 
                         table: 'buzzes', 
                         filter: `room_code=eq.${roomCode}` 
                     }, function(payload) {
-                        fetchBuzzResults();
+                        fetchBuzzResults(); // Tải lại danh sách (sẽ trả về rỗng nếu đã reset)
                     })
                     .subscribe();
 
-                // Lắng nghe khi Host cập nhật trạng thái phòng (Mở chuông/Reset chuông)
+                // LẮNG NGHE BẢNG ROOMS: Cập nhật lại mốc thời gian khi Host mở chuông lượt mới
                 supabase.channel('room_time_realtime')
                     .on('postgres_changes', { 
                         event: 'UPDATE', 
@@ -169,7 +167,7 @@
                         filter: `room_code=eq.${roomCode}` 
                     }, function(payload) {
                         if (payload.new) {
-                            // Cập nhật lại mốc 0s. Nếu Host reset (open_time = null) thì đưa về 0.
+                            // Cập nhật lại buzzStartTime từ buzz_open_time mới
                             buzzStartTime = payload.new.buzz_open_time ? new Date(payload.new.buzz_open_time).getTime() : 0;
                         }
                     })
@@ -184,5 +182,4 @@
         });
     </script>
 </body>
-
 </html>
