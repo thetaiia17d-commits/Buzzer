@@ -1014,8 +1014,21 @@
     }
 
     async function fetchBuzz() {
-      const { data } = await supabase.from('buzzes').select('*').eq('room_code', currentRoom);
-      if (data) { buzzOrder = data; renderBuzz(); }
+      if (!currentRoom) return;
+      const { data, error } = await supabase
+        .from('buzzes')
+        .select('*')
+        .eq('room_code', currentRoom)
+        // QUAN TRỌNG: Sắp xếp theo số giây thực tế bấm (elapsed) tăng dần
+        // Ai có số giây nhỏ hơn (bấm nhanh hơn) sẽ luôn đứng trên
+        .order('elapsed', { ascending: true });
+
+      if (error) {
+        console.error("Lỗi lấy danh sách chuông:", error.message);
+      } else {
+        buzzOrder = data;
+        renderBuzz(); // Hàm này sẽ vẽ lại bảng với thứ tự đã sắp xếp
+      }
     }
 
     async function fetchUsers() {
