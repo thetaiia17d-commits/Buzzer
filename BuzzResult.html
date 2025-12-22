@@ -50,6 +50,15 @@
             margin-top: 5px;
             color: blue;
         }
+
+        /* Định dạng dòng thông báo mặc định */
+        .no-signal {
+            text-align: center;
+            color: purple !important; /* Chỉnh màu tím theo yêu cầu */
+            font-size: 1.2em;
+            padding: 20px;
+            font-weight: bold;
+        }
     </style>
 </head>
 
@@ -61,7 +70,7 @@
     </div>
 
     <div id="resultsContainer">
-        <div style="text-align:center; color: purple !important;">Chưa có tín hiệu chuông...</div>
+        <div class="no-signal">Chưa có tín hiệu chuông...</div>
     </div>
 
     <script>
@@ -70,7 +79,6 @@
         var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzdmdnZWtuZXRpYWNlend2Z3h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0OTI0NzksImV4cCI6MjA4MDA2ODQ3OX0.mkrHJaOA2axmVx8o5M0AOoyiVdmIFyNdQMiQahSvdEU";
         var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // Lấy mã phòng từ ?roomid=
         var urlParams = new URLSearchParams(window.location.search);
         var roomCode = urlParams.get('roomid'); 
         
@@ -105,7 +113,6 @@
                 return;
             }
             
-            // Cập nhật danh sách (nếu database trống thì buzzList sẽ là [])
             buzzList = data || [];
             render();
         }
@@ -119,13 +126,12 @@
         function render() {
             var container = document.getElementById("resultsContainer");
             
-            // Nếu danh sách trống (sau khi Reset), hiện dòng chữ mặc định
+            // Nếu danh sách trống (sau khi Host Reset), hiện dòng chữ màu tím
             if (!buzzList || buzzList.length === 0) {
-                container.innerHTML = '<div style="text-align:center; color: gray;">Chưa có tín hiệu chuông...</div>';
+                container.innerHTML = '<div class="no-signal">Chưa có tín hiệu chuông...</div>';
                 return;
             }
 
-            // Vẽ danh sách kết quả
             container.innerHTML = buzzList.map(function(buzz, index) {
                 var timeStr = formatBuzzTime(buzz.created_at);
                 return `
@@ -142,8 +148,7 @@
             await fetchBuzzResults();
 
             if (roomCode) {
-                // LẮNG NGHE SỰ KIỆN THỜI GIAN THỰC
-                // Khi Host Reset chuông -> Dữ liệu bảng buzzes bị xóa -> Event DELETE kích hoạt fetchBuzzResults
+                // Lắng nghe thay đổi bảng buzzes (Thêm mới hoặc Xóa sạch khi Reset)
                 supabase.channel('buzz_results_realtime')
                     .on('postgres_changes', { 
                         event: '*', 
@@ -151,12 +156,11 @@
                         table: 'buzzes', 
                         filter: `room_code=eq.${roomCode}` 
                     }, function(payload) {
-                        // Tải lại dữ liệu ngay lập tức khi có bất kỳ thay đổi nào (Thêm/Xóa)
                         fetchBuzzResults();
                     })
                     .subscribe();
 
-                // Lắng nghe khi Host mở chuông lần mới để cập nhật mốc thời gian 0s
+                // Lắng nghe khi Host cập nhật trạng thái phòng (Mở chuông/Reset chuông)
                 supabase.channel('room_time_realtime')
                     .on('postgres_changes', { 
                         event: 'UPDATE', 
@@ -164,8 +168,9 @@
                         table: 'rooms', 
                         filter: `room_code=eq.${roomCode}` 
                     }, function(payload) {
-                        if (payload.new && payload.new.buzz_open_time) {
-                            buzzStartTime = new Date(payload.new.buzz_open_time).getTime();
+                        if (payload.new) {
+                            // Cập nhật lại mốc 0s. Nếu Host reset (open_time = null) thì đưa về 0.
+                            buzzStartTime = payload.new.buzz_open_time ? new Date(payload.new.buzz_open_time).getTime() : 0;
                         }
                     })
                     .subscribe();
@@ -174,7 +179,6 @@
 
         init();
 
-        // Chặn menu chuột phải giống Result.html
         document.addEventListener("contextmenu", function(e) {
             e.preventDefault();
         });
