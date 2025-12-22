@@ -558,50 +558,40 @@
 
       const now = Date.now() + serverTimeOffset;
 
-      // --- XỬ LÝ TRẠNG THÁI CHUÔNG ---
-      // Lấy thời gian kết thúc dựa trên roomInfo mới nhất
-      let bEndTime = 0;
-      if (roomInfo.buzz_open_time && roomInfo.buzz_duration > 0) {
-        bEndTime = new Date(roomInfo.buzz_open_time).getTime() + (roomInfo.buzz_duration * 1000);
+      // --- CẬP NHẬT CÁC BIẾN ĐIỀU KHIỂN ĐỂ SETINTERVAL DÙNG ---
+      // Chuông
+      buzzDurationLimit = roomInfo.buzz_duration || 0;
+      if (roomInfo.buzz_open_time && buzzDurationLimit > 0) {
+        buzzEndTime = new Date(roomInfo.buzz_open_time).getTime() + (buzzDurationLimit * 1000);
+      } else {
+        buzzEndTime = 0;
       }
+      // Trạng thái lockedBuzz: khóa nếu status là locked HOẶC (có giới hạn và đã hết giờ)
+      lockedBuzz = (roomInfo.buzz_status === 'locked') || (buzzEndTime > 0 && now >= buzzEndTime);
 
-      const isBuzzTimeValid = (roomInfo.buzz_duration === 0 || now < bEndTime);
-      const isBuzzActuallyOpen = (roomInfo.buzz_status === 'open') && isBuzzTimeValid;
+      // Đáp án
+      answerDurationLimit = roomInfo.answer_duration || 0;
+      if (roomInfo.answer_open_time && answerDurationLimit > 0) {
+        answerEndTime = new Date(roomInfo.answer_open_time).getTime() + (answerDurationLimit * 1000);
+      } else {
+        answerEndTime = 0;
+      }
+      lockedAnswer = (roomInfo.answer_status === 'locked') || (answerEndTime > 0 && now >= answerEndTime);
 
-      if (isBuzzActuallyOpen) {
+      // --- HIỂN THỊ Ô TRẠNG THÁI (Status Box) ---
+      // Chuông
+      if (roomInfo.buzz_status === 'open' && (buzzDurationLimit === 0 || now < buzzEndTime)) {
         sB.className = "status-box open";
-        let text = "Chuông: 🔔 Đang mở";
-        if (roomInfo.buzz_duration > 0) {
-          let remain = Math.max(0, (bEndTime - now) / 1000);
-          text += ` (${remain.toFixed(1)}s)`; // Hiển thị đếm ngược trên Host
-        } else {
-          text += " (Vĩnh viễn)";
-        }
-        sB.innerText = text;
+        sB.innerText = "Chuông: 🔔 Đang mở " + (buzzDurationLimit > 0 ? "" : "(Vĩnh viễn)");
       } else {
         sB.className = "status-box locked";
         sB.innerText = "Chuông: 🚫 Đang khóa";
       }
 
-      // --- XỬ LÝ TRẠNG THÁI ĐÁP ÁN ---
-      let aEndTime = 0;
-      if (roomInfo.answer_open_time && roomInfo.answer_duration > 0) {
-        aEndTime = new Date(roomInfo.answer_open_time).getTime() + (roomInfo.answer_duration * 1000);
-      }
-
-      const isAnswerTimeValid = (roomInfo.answer_duration === 0 || now < aEndTime);
-      const isAnswerActuallyOpen = (roomInfo.answer_status === 'open') && isAnswerTimeValid;
-
-      if (isAnswerActuallyOpen) {
+      // Đáp án
+      if (roomInfo.answer_status === 'open' && (answerDurationLimit === 0 || now < answerEndTime)) {
         sA.className = "status-box open";
-        let text = "Đáp án: 🔓 Đang mở";
-        if (roomInfo.answer_duration > 0) {
-          let remain = Math.max(0, (aEndTime - now) / 1000);
-          text += ` (${remain.toFixed(1)}s)`;
-        } else {
-          text += " (Vĩnh viễn)";
-        }
-        sA.innerText = text;
+        sA.innerText = "Đáp án: 🔓 Đang mở " + (answerDurationLimit > 0 ? "" : "(Vĩnh viễn)");
       } else {
         sA.className = "status-box locked";
         sA.innerText = "Đáp án: 🔒 Đang khóa";
@@ -615,48 +605,52 @@
       const aDisp = document.getElementById("answerTimeElapsed");
       const bDisp = document.getElementById("buzzTimeElapsed");
 
-      if (!aDisp || !bDisp) return;
+      if (!aDisp || !bDisp || !roomInfo) return;
 
-      if (!lockedAnswer && answerDurationLimit > 0 && answerEndTime > 0) {
-        let remain = answerEndTime - currentServerTime;
-        const maxMs = answerDurationLimit * 1000;
-        if (remain > maxMs) remain = maxMs;
-
-        if (remain <= 0) {
-          lockedAnswer = true;
-          updateUI();
-          aDisp.innerText = "Hết giờ!";
-          autoLockRoomStatus(true);
+      // --- XỬ LÝ HIỂN THỊ DÒNG "THỜI GIAN CÒN LẠI" CHO CHUÔNG ---
+      if (roomInfo.buzz_status === 'open') {
+        if (buzzDurationLimit > 0 && buzzEndTime > 0) {
+          let remain = buzzEndTime - currentServerTime;
+          if (remain <= 0) {
+            bDisp.innerText = "Hết giờ!";
+            if (!lockedBuzz) {
+              lockedBuzz = true;
+              updateUI();
+              autoLockRoomStatus(false);
+            }
+          } else {
+            bDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+          }
         } else {
-          aDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+          bDisp.innerText = "Đang mở (Không giới hạn)";
         }
-      } else if (roomInfo && roomInfo.answer_status === 'pending_open') {
-        aDisp.innerText = "Đang chờ thí sinh đồng bộ...";
-      } else if (!lockedAnswer) {
-        aDisp.innerText = "Đang mở (Không giới hạn)";
-      } else {
-        aDisp.innerText = "";
-      }
-
-      if (!lockedBuzz && buzzDurationLimit > 0 && buzzEndTime > 0) {
-        let remain = buzzEndTime - currentServerTime;
-        const maxMs = buzzDurationLimit * 1000;
-        if (remain > maxMs) remain = maxMs;
-
-        if (remain <= 0) {
-          lockedBuzz = true;
-          updateUI();
-          bDisp.innerText = "Hết giờ!";
-          autoLockRoomStatus(false);
-        } else {
-          bDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
-        }
-      } else if (roomInfo && roomInfo.buzz_status === 'pending_open') {
+      } else if (roomInfo.buzz_status === 'pending_open') {
         bDisp.innerText = "Đang chờ thí sinh đồng bộ...";
-      } else if (!lockedBuzz) {
-        bDisp.innerText = "Đang mở (Không giới hạn)";
       } else {
         bDisp.innerText = "";
+      }
+
+      // --- XỬ LÝ HIỂN THỊ CHO ĐÁP ÁN ---
+      if (roomInfo.answer_status === 'open') {
+        if (answerDurationLimit > 0 && answerEndTime > 0) {
+          let remain = answerEndTime - currentServerTime;
+          if (remain <= 0) {
+            aDisp.innerText = "Hết giờ!";
+            if (!lockedAnswer) {
+              lockedAnswer = true;
+              updateUI();
+              autoLockRoomStatus(true);
+            }
+          } else {
+            aDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+          }
+        } else {
+          aDisp.innerText = "Đang mở (Không giới hạn)";
+        }
+      } else if (roomInfo.answer_status === 'pending_open') {
+        aDisp.innerText = "Đang chờ thí sinh đồng bộ...";
+      } else {
+        aDisp.innerText = "";
       }
     }, 30);
 
