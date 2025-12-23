@@ -467,6 +467,8 @@
     let tblBuzzBody = null;
     let answerDurationInput = null;
     let buzzDurationInput = null;
+    let lastAnswerResetAt = null;
+    let lastBuzzResetAt = null;
 
     function showPopup(message, type = "success") {
       const popup = document.getElementById("popupMessage");
