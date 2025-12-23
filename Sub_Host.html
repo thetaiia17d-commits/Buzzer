@@ -767,7 +767,13 @@
     }
     async function fetchRoomStatus() {
       const { data } = await supabase.from('rooms').select('*').eq('room_code', currentRoom).single();
-      if (data) handleRoomUpdate(data);
+      if (data) {
+        // Khởi tạo mốc thời gian Reset để tránh kích hoạt xóa bảng ngay khi vừa vào phòng
+        lastAnswerResetAt = data.answer_reset_at;
+        lastBuzzResetAt = data.buzz_reset_at;
+
+        handleRoomUpdate(data);
+      }
     }
 
     function handleRoomUpdate(room) {
@@ -941,7 +947,7 @@
       if (!currentRoom) return;
       const table = isAnswer ? 'answers' : 'buzzes';
 
-      // Xóa trên DB
+      // 1. Xóa dữ liệu trên bảng answers/buzzes của phòng này
       const { error } = await supabase.from(table).delete().eq('room_code', currentRoom);
 
       if (error) {
@@ -949,22 +955,27 @@
         return;
       }
 
-      // Cập nhật trạng thái phòng để các máy khác biết và đồng bộ
-      const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
+      // 2. Cập nhật mốc thời gian Reset vào bảng 'rooms' để phát tín hiệu cho các máy khác
       let updates = {};
+      const nowISO = new Date().toISOString();
+
       if (isAnswer) {
-        updates = { answer_open_time: null, answer_status: 'locked', answer_duration: 0, answer_reset_at: new Date().toISOString() };
+        updates = {
+          answer_status: 'locked',
+          answer_duration: 0,
+          answer_open_time: null,
+          answer_reset_at: nowISO // Cập nhật mốc reset mới
+        };
       } else {
-        updates = { buzz_open_time: null, buzz_status: 'locked', buzz_duration: 0, buzz_reset_at: new Date().toISOString() };
+        updates = {
+          buzz_status: 'locked',
+          buzz_duration: 0,
+          buzz_open_time: null,
+          buzz_reset_at: nowISO // Cập nhật mốc reset mới
+        };
       }
 
       await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
-
-      // Cập nhật giao diện local ngay lập tức
-      if (isAnswer) { answers = []; renderAnswers(); }
-      else { buzzOrder = []; renderBuzz(); }
-
-      showPopup("Đã xóa dữ liệu và Reset thành công!");
     }
 
     function toggleAddType() { generateAddRows(); }
