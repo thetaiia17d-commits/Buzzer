@@ -806,43 +806,103 @@
     }
 
     function subscribeRealtime() {
+      // ===== ROOMS =====
       if (roomChannel) supabase.removeChannel(roomChannel);
-      roomChannel = supabase.channel('room-' + currentRoom).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` }, payload => handleRoomUpdate(payload.new)).subscribe();
+      roomChannel = supabase
+        .channel(`room-${currentRoom}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'rooms',
+            filter: `room_code=eq.${currentRoom}`
+          },
+          payload => handleRoomUpdate(payload.new)
+        )
+        .subscribe();
 
+      // ===== ANSWERS =====
       if (answersChannel) supabase.removeChannel(answersChannel);
-      answersChannel = supabase.channel('ans_ch')
-        .on('postgres_changes',
-          { event: 'DELETE', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
+      answersChannel = supabase
+        .channel(`answers-${currentRoom}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'answers',
+            filter: `room_code=eq.${currentRoom}`
+          },
+          payload => {
+            answers.push(payload.new);
+            renderAnswers();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'answers',
+            filter: `room_code=eq.${currentRoom}`
+          },
           () => {
             answers = [];
             renderAnswers();
             showPopup("Đáp án đã được Reset!");
           }
         )
-        .on('postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
-          fetchAnswers
-        )
         .subscribe();
 
+      // ===== BUZZES =====
       if (buzzesChannel) supabase.removeChannel(buzzesChannel);
-      buzzesChannel = supabase.channel('buzz_ch')
-        .on('postgres_changes',
-          { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
+      buzzesChannel = supabase
+        .channel(`buzzes-${currentRoom}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'buzzes',
+            filter: `room_code=eq.${currentRoom}`
+          },
+          payload => {
+            buzzOrder.push(payload.new);
+            renderBuzz();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'buzzes',
+            filter: `room_code=eq.${currentRoom}`
+          },
           () => {
             buzzOrder = [];
             renderBuzz();
             showPopup("Chuông đã được Reset!");
           }
         )
-        .on('postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
-          fetchBuzz
-        )
         .subscribe();
 
+      // ===== PARTICIPANTS =====
       if (participantsChannel) supabase.removeChannel(participantsChannel);
-      participantsChannel = supabase.channel('part_ch').on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` }, fetchUsers).subscribe();
+      participantsChannel = supabase
+        .channel(`participants-${currentRoom}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'participants',
+            filter: `room_code=eq.${currentRoom}`
+          },
+          fetchUsers
+        )
+        .subscribe();
     }
 
     async function updateRoomStatus(status, duration, isAnswer) {
