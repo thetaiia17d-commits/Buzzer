@@ -400,6 +400,11 @@
                 }
                 updateBuzzUI(lockedBuzz); 
                 renderBuzzTable();
+            } else {
+                buzzOrder = [];
+                hasBuzzed = false;
+                updateBuzzUI(lockedBuzz);
+                renderBuzzTable();
             }
         }
 
@@ -410,8 +415,7 @@
                 answerStatusBox.innerText = `Bạn đã trả lời "${data.answer_text}" ở ${timeDiff}`;
                 answerStatusBox.style.display = "block";
             } else {
-                answerStatusBox.innerText = "";
-                answerStatusBox.innerHTML = "";
+                resetAnswerStatusBox();
             }
         }
 

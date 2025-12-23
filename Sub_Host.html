@@ -612,6 +612,8 @@
     function renderAnswers() {
       if (!tblAnswersBody) return;
       tblAnswersBody.innerHTML = "";
+      if (!answers || answers.length === 0) return;
+
       const sortOption = document.querySelector('input[name="sortOption"]:checked')?.value || 'time';
 
       const latestAnswersMap = new Map();
@@ -653,6 +655,8 @@
     function renderBuzz() {
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
+      if (!buzzOrder || buzzOrder.length === 0) return;
+
       const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       const uniqueBuzzMap = new Map();
       sorted.forEach(item => { if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item); });
@@ -743,10 +747,12 @@
     async function fetchAnswers() {
       const { data } = await supabase.from('answers').select('*').eq('room_code', currentRoom);
       if (data) { answers = data; renderAnswers(); }
+      else { answers = []; renderAnswers(); }
     }
     async function fetchBuzz() {
       const { data } = await supabase.from('buzzes').select('*').eq('room_code', currentRoom);
       if (data) { buzzOrder = data; renderBuzz(); }
+      else { buzzOrder = []; renderBuzz(); }
     }
     async function fetchUsers() {
       const { data } = await supabase.from('participants').select('*').eq('room_code', currentRoom).order('created_at', { ascending: true });
@@ -816,6 +822,11 @@
     async function resetRoomData(isAnswer) {
       if (!currentRoom) return;
       const table = isAnswer ? 'answers' : 'buzzes';
+      // First clear locally for immediate feedback to this host
+      if (isAnswer) { answers = []; renderAnswers(); }
+      else { buzzOrder = []; renderBuzz(); }
+
+      // Clear the DB - this triggers DELETE events for all other hosts/managers
       await supabase.from(table).delete().eq('room_code', currentRoom);
       
       const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
@@ -828,8 +839,6 @@
         } else {
            updates = { answer_status: 'locked', answer_open_time: null, answer_duration: 0 };
         }
-        answers = [];
-        renderAnswers();
       } else {
         const isPermanent = roomInfoData && roomInfoData.buzz_status === 'open' && (roomInfoData.buzz_duration === 0 || !roomInfoData.buzz_duration);
         if (isPermanent) {
@@ -837,12 +846,10 @@
         } else {
            updates = { buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 };
         }
-        buzzOrder = [];
-        renderBuzz();
       }
 
       await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
-      fetchRoomStatus();
+      fetchRoomStatus(); // Syncs local UI with updated room state
       showPopup("Đã xóa dữ liệu và Reset!");
     }
 
