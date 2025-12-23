@@ -790,18 +790,29 @@
       } else { buzzStartTime = 0; lockedBuzz = true; }
 
       // ================= RESET ANSWER =================
-      if (room.answer_reset_at && room.answer_reset_at !== roomInfoData?.answer_reset_at) {
+      if (
+        room.answer_reset_at &&
+        room.answer_reset_at !== lastAnswerResetAt
+      ) {
+        lastAnswerResetAt = room.answer_reset_at;
         answers = [];
         renderAnswers();
         showPopup("Đáp án đã bị Reset!");
       }
 
       // ================= RESET BUZZ =================
-      if (room.buzz_reset_at && room.buzz_reset_at !== roomInfoData?.buzz_reset_at) {
+      if (
+        room.buzz_reset_at &&
+        room.buzz_reset_at !== lastBuzzResetAt
+      ) {
+        lastBuzzResetAt = room.buzz_reset_at;
         buzzOrder = [];
         renderBuzz();
         showPopup("Chuông đã bị Reset!");
       }
+
+      // ===== cập nhật trạng thái phòng SAU =====
+      roomInfoData = room;
       updateUI();
     }
 
