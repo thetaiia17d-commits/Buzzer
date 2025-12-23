@@ -283,7 +283,6 @@
         let currentAnswerStartTime = 0;
         let buzzOrder = [];
 
-        // BIẾN QUAN TRỌNG ĐỂ LOẠI BỎ ĐỘ TRỄ MẠNG
         let localAnswerReceiveTime = 0; 
         let localBuzzReceiveTime = 0;   
         let serverAnswerOpenTime = 0;  
@@ -395,9 +394,12 @@
             const { data } = await supabase.from('buzzes').select('*').eq('room_code', myRoom);
             if (data) {
                 buzzOrder = data;
-                if (data.some(b => b.name === myName) && !hasBuzzed) {
-                    hasBuzzed = true; updateBuzzUI(lockedBuzz); 
+                if (data.some(b => b.name === myName)) {
+                    hasBuzzed = true; 
+                } else {
+                    hasBuzzed = false;
                 }
+                updateBuzzUI(lockedBuzz); 
                 renderBuzzTable();
             }
         }
@@ -534,7 +536,7 @@
                     showPopup("Host đã reset đáp án!");
                 })
                 .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { 
-                    hasBuzzed = false; // Reset trạng thái khi host xóa chuông
+                    hasBuzzed = false;
                     buzzOrder = []; renderBuzzTable(); updateBuzzUI(lockedBuzz); 
                     showPopup("Host đã reset chuông!"); 
                     if (!lockedAnswer) answerInput.focus(); 
@@ -552,7 +554,6 @@
             const newAnswerStartTime = answerOpenTimeISO ? new Date(answerOpenTimeISO).getTime() : 0;
 
             if (isAnswerOpen && answerOpenTimeISO) {
-                // Chỉ reset timer và mốc local nếu đây là lượt mở mới hoặc reset mốc thời gian
                 if (currentAnswerStartTime !== newAnswerStartTime) {
                     currentAnswerStartTime = newAnswerStartTime;
                     serverAnswerOpenTime = newAnswerStartTime;
@@ -571,10 +572,6 @@
                 currentAnswerStartTime = 0;
                 if (answerInterval) { clearInterval(answerInterval); answerInterval = null; }
                 document.getElementById('answerCountdown').innerText = "--.--s";
-                if (!isAnswerOpen) {
-                    answerStatusBox.innerText = "";
-                    answerStatusBox.innerHTML = "";
-                }
             }
 
             /* ===================== CHUÔNG ===================== */
@@ -583,7 +580,6 @@
             const newBuzzStartTime = buzzOpenTimeISO ? new Date(buzzOpenTimeISO).getTime() : 0;
 
             if (isBuzzOpen && buzzOpenTimeISO) {
-                // Nếu mốc thời gian chuông thay đổi -> Đây là vòng bấm mới (Reset trạng thái hasBuzzed)
                 if (currentBuzzStartTime !== newBuzzStartTime) {
                     hasBuzzed = false; 
                     currentBuzzStartTime = newBuzzStartTime;
@@ -603,10 +599,6 @@
                 currentBuzzStartTime = 0;
                 if (buzzInterval) { clearInterval(buzzInterval); buzzInterval = null; }
                 document.getElementById('buzzCountdown').innerText = "--.--s";
-                if (!isBuzzOpen) {
-                    buzzOrder = [];
-                    renderBuzzTable();
-                }
             }
         }
 

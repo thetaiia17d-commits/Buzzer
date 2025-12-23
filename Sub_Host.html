@@ -521,11 +521,9 @@
 
     async function autoLockRoomStatus(isAnswer) {
       if (!currentRoom) return;
-      if ((isAnswer && lockedAnswer === false) || (!isAnswer && lockedBuzz === false)) {
-        const updates = isAnswer ? { answer_status: 'locked', answer_open_time: null, answer_duration: 0 } 
-                                 : { buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 };
-        await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
-      }
+      const updates = isAnswer ? { answer_status: 'locked', answer_open_time: null, answer_duration: 0 } 
+                               : { buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 };
+      await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
     }
 
     function updateUI() {
@@ -799,23 +797,16 @@
         updates = {
           answer_status: status,
           answer_duration: duration,
-          answer_open_time: status === 'open' ? nowISO : null,
-          buzz_status: 'locked', // Mở đáp án thì khóa chuông
-          buzz_open_time: null,
-          buzz_duration: 0
+          answer_open_time: status === 'open' ? nowISO : null
         };
       } else {
         updates = {
           buzz_status: status,
           buzz_duration: duration,
-          buzz_open_time: status === 'open' ? nowISO : null,
-          answer_status: 'locked', // Mở chuông thì khóa đáp án
-          answer_open_time: null,
-          answer_duration: 0
+          buzz_open_time: status === 'open' ? nowISO : null
         };
       }
       await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
-      fetchRoomStatus();
     }
 
     async function resetRoomData(isAnswer) {
@@ -823,33 +814,24 @@
       const table = isAnswer ? 'answers' : 'buzzes';
       await supabase.from(table).delete().eq('room_code', currentRoom);
       
-      const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
       if (isAnswer) {
         answers = [];
         renderAnswers();
-        // Reset đáp án sẽ Khóa cả hai để chuẩn bị lượt mới
         await supabase.from('rooms').update({
           answer_status: 'locked',
           answer_open_time: null,
-          answer_duration: 0,
-          buzz_status: 'locked',
-          buzz_open_time: null,
-          buzz_duration: 0
+          answer_duration: 0
         }).eq('room_code', currentRoom);
       } else {
         buzzOrder = [];
         renderBuzz();
-        // Reset chuông: Giữ nguyên trạng thái hiện tại (nếu đang Open vĩnh viễn thì vẫn Open)
-        // Nhưng cập nhật buzz_open_time mới để thí sinh có thể bấm lại
-        const currentBuzzStatus = roomInfoData.buzz_status;
-        const currentBuzzDuration = roomInfoData.buzz_duration;
         await supabase.from('rooms').update({
-          buzz_open_time: currentBuzzStatus === 'open' ? nowISO : null,
-          buzz_status: currentBuzzStatus
+          buzz_status: 'locked',
+          buzz_open_time: null,
+          buzz_duration: 0
         }).eq('room_code', currentRoom);
       }
-      fetchRoomStatus();
-      showPopup("Đã xóa dữ liệu và Reset!");
+      showPopup(`Đã reset ${isAnswer ? "đáp án" : "chuông"}!`);
     }
 
     window.onload = () => {
