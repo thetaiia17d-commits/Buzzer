@@ -796,10 +796,36 @@
       roomChannel = supabase.channel('room-' + currentRoom).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${currentRoom}` }, payload => handleRoomUpdate(payload.new)).subscribe();
 
       if (answersChannel) supabase.removeChannel(answersChannel);
-      answersChannel = supabase.channel('ans_ch').on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` }, fetchAnswers).subscribe();
+      answersChannel = supabase.channel('ans_ch')
+        .on('postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
+          () => {
+            answers = [];
+            renderAnswers();
+            showPopup("Đáp án đã được Reset!");
+          }
+        )
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'answers', filter: `room_code=eq.${currentRoom}` },
+          fetchAnswers
+        )
+        .subscribe();
 
       if (buzzesChannel) supabase.removeChannel(buzzesChannel);
-      buzzesChannel = supabase.channel('buzz_ch').on('postgres_changes', { event: '*', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` }, fetchBuzz).subscribe();
+      buzzesChannel = supabase.channel('buzz_ch')
+        .on('postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
+          () => {
+            buzzOrder = [];
+            renderBuzz();
+            showPopup("Chuông đã được Reset!");
+          }
+        )
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
+          fetchBuzz
+        )
+        .subscribe();
 
       if (participantsChannel) supabase.removeChannel(participantsChannel);
       participantsChannel = supabase.channel('part_ch').on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_code=eq.${currentRoom}` }, fetchUsers).subscribe();

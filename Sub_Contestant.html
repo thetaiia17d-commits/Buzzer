@@ -350,6 +350,7 @@
         function resetAnswerStatusBox() {
             answerStatusBox.innerText = "";
             answerStatusBox.innerHTML = "";
+            answerStatusBox.style.display = "block";
             answerInput.value = "";
         }
 
@@ -530,7 +531,7 @@
                     schema: 'public',
                     table: 'answers',
                     filter: `room_code=eq.${myRoom}`
-                }, (payload) => {
+                }, () => {
                     // Khi có bất kỳ lệnh DELETE nào từ bảng answers của phòng này
                     resetAnswerStatusBox();
                     showPopup("Host đã Reset đáp án!");
