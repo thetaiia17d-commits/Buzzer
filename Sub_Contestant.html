@@ -282,6 +282,8 @@
         let currentBuzzStartTime = 0;
         let currentAnswerStartTime = 0;
         let buzzOrder = [];
+        let lastAnswerResetAt = null;
+        let lastBuzzResetAt = null;
 
         let localAnswerReceiveTime = 0;
         let localBuzzReceiveTime = 0;
@@ -547,6 +549,34 @@
 
         async function handleRoomUpdate(roomData) {
             if (!roomData) return;
+
+            /* ===================== RESET ĐÁP ÁN ===================== */
+            if (roomData.answer_reset_at &&
+                roomData.answer_reset_at !== lastAnswerResetAt) {
+
+                lastAnswerResetAt = roomData.answer_reset_at;
+
+                // Xóa chữ ô cam, GIỮ ô
+                resetAnswerStatusBox();
+
+                // Xóa bảng đáp án local (nếu có)
+                myLastAnswer = null;
+
+                showPopup("Đáp án đã được Reset!");
+            }
+
+            /* ===================== RESET CHUÔNG ===================== */
+            if (roomData.buzz_reset_at &&
+                roomData.buzz_reset_at !== lastBuzzResetAt) {
+
+                lastBuzzResetAt = roomData.buzz_reset_at;
+
+                hasBuzzed = false;
+                buzzOrder = [];
+                renderBuzzTable();
+
+                showPopup("Chuông đã được Reset!");
+            }
 
             /* ===================== ĐÁP ÁN ===================== */
             const isAnswerOpen = (roomData.answer_status === 'open');
