@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="vi">
 
@@ -521,9 +522,12 @@
 
     async function autoLockRoomStatus(isAnswer) {
       if (!currentRoom) return;
-      const updates = isAnswer ? { answer_status: 'locked', answer_open_time: null, answer_duration: 0 } 
-                               : { buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 };
-      await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
+      // Safeguard against overlapping timers: check only the relevant flag
+      if (isAnswer && lockedAnswer === false) {
+          await supabase.from('rooms').update({ answer_status: 'locked', answer_open_time: null, answer_duration: 0 }).eq('room_code', currentRoom);
+      } else if (!isAnswer && lockedBuzz === false) {
+          await supabase.from('rooms').update({ buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 }).eq('room_code', currentRoom);
+      }
     }
 
     function updateUI() {
@@ -807,6 +811,7 @@
         };
       }
       await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
+      fetchRoomStatus();
     }
 
     async function resetRoomData(isAnswer) {
@@ -817,22 +822,31 @@
       if (isAnswer) {
         answers = [];
         renderAnswers();
-        await supabase.from('rooms').update({
-          answer_status: 'locked',
-          answer_open_time: null,
-          answer_duration: 0
-        }).eq('room_code', currentRoom);
+        const isPermanent = roomInfoData && roomInfoData.answer_status === 'open' && (roomInfoData.answer_duration === 0 || !roomInfoData.answer_duration);
+        if (isPermanent) {
+           // Permanent open mode: Refresh start time to reset contestant local UI but stay open
+           const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
+           await supabase.from('rooms').update({ answer_open_time: nowISO }).eq('room_code', currentRoom);
+        } else {
+           await supabase.from('rooms').update({ answer_status: 'locked', answer_open_time: null, answer_duration: 0 }).eq('room_code', currentRoom);
+        }
       } else {
         buzzOrder = [];
         renderBuzz();
-        await supabase.from('rooms').update({
-          buzz_status: 'locked',
-          buzz_open_time: null,
-          buzz_duration: 0
-        }).eq('room_code', currentRoom);
+        const isPermanent = roomInfoData && roomInfoData.buzz_status === 'open' && (roomInfoData.buzz_duration === 0 || !roomInfoData.buzz_duration);
+        if (isPermanent) {
+           // Permanent open mode: Refresh start time to reset contestant local UI but stay open
+           const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
+           await supabase.from('rooms').update({ buzz_open_time: nowISO }).eq('room_code', currentRoom);
+        } else {
+           await supabase.from('rooms').update({ buzz_status: 'locked', buzz_open_time: null, buzz_duration: 0 }).eq('room_code', currentRoom);
+        }
       }
-      showPopup(`Đã reset ${isAnswer ? "đáp án" : "chuông"}!`);
+      fetchRoomStatus();
+      showPopup("Đã xóa dữ liệu và Reset!");
     }
+
+    function toggleAddType() { generateAddRows(); }
 
     window.onload = () => {
       tblAnswersBody = document.querySelector("#tblAnswers tbody");
@@ -853,6 +867,7 @@
       document.getElementById("btnConfirmManager").onclick = async () => {
         const code = parseInt(document.getElementById("managerRoomCode").value);
         const name = document.getElementById("managerName").value.trim();
+        if(!code || !name) return showPopup("Thiếu thông tin!", "error");
         await supabase.from('participants').insert([{ room_code: code, name, role: "manager" }]);
         currentRoom = code; myName = name; myRole = "manager";
         document.getElementById("roomInfo").innerText = `Phòng: ${code} | Quản lý (${name})`;

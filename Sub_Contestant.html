@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="vi">
 
@@ -340,12 +341,10 @@
             if (isLocked) {
                 btnSend.classList.add("locked");
                 answerInput.classList.add("input-locked");
-                answerInput.onblur = null;
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
                 setTimeout(() => { answerInput.focus(); }, 10);
-                answerInput.onblur = (e) => { if (!lockedAnswer) setTimeout(() => { answerInput.focus(); }, 100); };
             }
         }
 
@@ -452,13 +451,6 @@
             if (!codeString || !name || codeString.length !== 6) return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
             const code = parseInt(codeString);
-            let positionVal = null;
-            if (posValue) {
-                positionVal = parseInt(posValue);
-                if (isNaN(positionVal) || positionVal < 1 || positionVal > 100) {
-                    return showPopup("Vị trí phải từ 1 đến 100", "error");
-                }
-            }
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).maybeSingle();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
@@ -539,7 +531,6 @@
                     hasBuzzed = false;
                     buzzOrder = []; renderBuzzTable(); updateBuzzUI(lockedBuzz); 
                     showPopup("Host đã reset chuông!"); 
-                    if (!lockedAnswer) answerInput.focus(); 
                 })
                 .subscribe();
             buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); }).subscribe();
@@ -599,6 +590,10 @@
                 currentBuzzStartTime = 0;
                 if (buzzInterval) { clearInterval(buzzInterval); buzzInterval = null; }
                 document.getElementById('buzzCountdown').innerText = "--.--s";
+                if (!isBuzzOpen) {
+                    buzzOrder = [];
+                    renderBuzzTable();
+                }
             }
         }
 
