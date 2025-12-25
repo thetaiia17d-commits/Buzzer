@@ -957,7 +957,7 @@
         return;
       }
 
-      // 2. Cập nhật mốc thời gian Reset vào bảng 'rooms' để phát tín hiệu cho các máy khác
+      // 2. Chuẩn bị dữ liệu cập nhật cho bảng 'rooms'
       let updates = {};
       const nowISO = new Date().toISOString();
 
@@ -966,15 +966,27 @@
           answer_status: 'locked',
           answer_duration: 0,
           answer_open_time: null,
-          answer_reset_at: nowISO // Cập nhật mốc reset mới
+          answer_reset_at: nowISO
         };
       } else {
-        updates = {
-          buzz_status: 'locked',
-          buzz_duration: 0,
-          buzz_open_time: null,
-          buzz_reset_at: nowISO // Cập nhật mốc reset mới
-        };
+        // KIỂM TRA: Nếu đang ở chế độ Mở chuông vĩnh viễn (status open và duration = 0)
+        const isPermanentOpen = roomInfoData.buzz_status === 'open' && (roomInfoData.buzz_duration === 0);
+
+        if (isPermanentOpen) {
+          updates = {
+            buzz_status: 'open',
+            buzz_duration: 0,
+            buzz_open_time: nowISO, // Cập nhật mốc thời gian mới để tính giây lại từ đầu (0.000s)
+            buzz_reset_at: nowISO
+          };
+        } else {
+          updates = {
+            buzz_status: 'locked',
+            buzz_duration: 0,
+            buzz_open_time: null,
+            buzz_reset_at: nowISO
+          };
+        }
       }
 
       await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
