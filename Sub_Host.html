@@ -470,6 +470,7 @@
     let lastAnswerResetAt = null;
     let lastBuzzResetAt = null;
 
+    const buzzSound = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
     function showPopup(message, type = "success") {
       const popup = document.getElementById("popupMessage");
       if (!popup) return;
@@ -889,6 +890,7 @@
           payload => {
             buzzOrder.push(payload.new);
             renderBuzz();
+            buzzSound.play().catch(e => console.log("Audio play blocked"));
           }
         )
         .on(

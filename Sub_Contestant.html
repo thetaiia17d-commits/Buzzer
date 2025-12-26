@@ -300,6 +300,7 @@
         const answerStatusBox = document.getElementById("answerStatusBox");
         const btnBuzz = document.getElementById("btnBuzz");
         const tblBuzzBody = document.querySelector("#tblBuzz tbody");
+        const buzzSound = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
 
         function showPopup(msg, type = "success") {
             const p = document.getElementById("popupMessage");
@@ -544,7 +545,7 @@
                     showPopup("Host đã reset chuông!");
                 })
                 .subscribe();
-            buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); }).subscribe();
+            buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); buzzSound.play().catch(e => console.log("Audio play blocked"));}).subscribe();
         }
 
         async function handleRoomUpdate(roomData) {
