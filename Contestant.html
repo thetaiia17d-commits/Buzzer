@@ -321,7 +321,6 @@
             
             myRoom = parseInt(code);
             myName = name;
-            loginArea.style.display = "none";
             gameArea.style.display = "flex";
 
             await syncServerTime();
@@ -340,7 +339,7 @@
 
             const { error } = await supabase.from('answers').insert([{ room_code: myRoom, name: myName, answer_text: text, created_at: finalISO }]);
             if (!error) {
-                lastAnswerStatus.innerText = `Bạn đã trả lời: "${text}" (${formatTimeDisplay(finalISO, currentAnswerStartTime)})`;
+                lastAnswerStatus.innerText = `Bạn đã trả lời: "${text}" ở (${formatTimeDisplay(finalISO, currentAnswerStartTime)})`;
                 answerInput.value = "";
                 showPopup("Đã gửi!");
             }
