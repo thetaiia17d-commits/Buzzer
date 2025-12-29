@@ -486,9 +486,6 @@
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).maybeSingle();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-            const { data: existingUser } = await supabase.from('participants').select('id').eq('room_code', code).eq('name', name).maybeSingle();
-            if (existingUser) return showPopup("Tên này đã có người dùng trong phòng!", "error");
-
             await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
