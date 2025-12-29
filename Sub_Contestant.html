@@ -395,22 +395,23 @@
 
             // Theo dõi chính mình (Khóa/Xóa)
             // Tìm đến phần participantChannel trong hàm subscribeRealtime() và thay thế:
+            // Tìm đến đoạn participantChannel và thay thế bằng logic này:
             participantChannel = supabase.channel('my-status-' + myId)
                 .on('postgres_changes', {
                     event: '*',
                     schema: 'public',
                     table: 'participants'
                 }, (payload) => {
-                    // 1. Xử lý khi bị XÓA (Kick)
+                    // TRƯỜNG HỢP BỊ XÓA (KICK)
                     if (payload.eventType === 'DELETE') {
-                        // Kiểm tra xem ID bị xóa có khớp với ID của mình không
-                        if (payload.old && payload.old.id === myId) {
-                            alert("Bạn đã bị mời ra khỏi phòng!");
-                            location.reload(); // Reset toàn bộ trang để về giao diện login
+                        // payload.old chứa dữ liệu cũ. Nếu ID khớp với mình thì văng ra.
+                        if (payload.old && (payload.old.id === myId || payload.old.name === myName)) {
+                            showPopup("Bạn đã bị mời ra khỏi phòng!");
+                            window.location.reload();
                         }
                     }
 
-                    // 2. Xử lý khi bị KHÓA/MỞ (Update)
+                    // TRƯỜNG HỢP CẬP NHẬT KHÓA (UPDATE)
                     if (payload.eventType === 'UPDATE' && payload.new.id === myId) {
                         myPersonalAnswerLock = payload.new.answer_locked;
                         myPersonalBuzzLock = payload.new.buzz_locked;

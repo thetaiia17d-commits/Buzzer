@@ -489,22 +489,18 @@
 
     // --- HÀM XỬ LÝ XÓA THÍ SINH ---
     async function kickUser(name) {
-      // Thực hiện xóa trên Database
       const { error } = await supabase.from('participants')
         .delete()
         .eq('room_code', currentRoom)
         .eq('name', name);
 
       if (error) {
-        showPopup("Lỗi xóa: " + error.message, "error");
+        showPopup("Lỗi: " + error.message, "error");
       } else {
-        showPopup(`Đã xóa thí sinh ${name}`);
-
-        // CẬP NHẬT UI NGAY LẬP TỨC:
-        // Lọc bỏ thí sinh vừa xóa khỏi danh sách đang hiển thị trong bộ nhớ máy Host
+        // Cập nhật mảng local ngay lập tức để UI mất tên luôn
         allParticipants = allParticipants.filter(p => p.name !== name);
-        // Vẽ lại bảng danh sách thí sinh trong popup
         renderUserListPopup();
+        showPopup(`Đã xóa ${name}`);
       }
     }
 
@@ -534,15 +530,17 @@
     }
 
     async function saveSelectiveLock() {
-      const contestants = allParticipants.filter(p => p.role === 'contestant' && !p.name.startsWith("SYNC_"));
       const field = currentSelectiveType === 'answer' ? 'answer_locked' : 'buzz_locked';
       const updates = [];
 
-      for (const p of contestants) {
+      // Lấy danh sách những người cần update từ UI popup
+      allParticipants.forEach(p => {
         const chk = document.getElementById(`chk-${p.name}`);
         if (chk) {
           const newValue = chk.checked;
-          // Chỉ thêm vào danh sách update nếu giá trị có sự thay đổi
+          // Cập nhật vào mảng local ngay để khi mở lại không bị reset
+          p[field] = newValue;
+
           updates.push(
             supabase.from('participants')
               .update({ [field]: newValue })
@@ -550,16 +548,14 @@
               .eq('name', p.name)
           );
         }
+      });
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
       }
 
-      // Chờ tất cả các lệnh update chạy xong hoàn toàn
-      if (updates.length > 0) await Promise.all(updates);
-
-      showPopup("Đã lưu thay đổi thành công!");
+      showPopup("Đã lưu trạng thái khóa!");
       document.getElementById("selectiveLockPopup").style.display = "none";
-
-      // Quan trọng: Tải lại dữ liệu mới nhất từ server để lần sau mở popup sẽ thấy trạng thái mới nhất
-      await fetchUsers();
     }
 
     async function resetSelectiveLock() {
@@ -582,7 +578,7 @@
       if (!ul) return;
       ul.innerHTML = "";
 
-      // Lọc bỏ các bản ghi SYNC_TIME
+      // Lọc bỏ các bản ghi SYNC_TIME_
       let displayUsers = allParticipants.filter(u => !u.name.startsWith("SYNC_TIME_"));
 
       // Sắp xếp
@@ -590,11 +586,6 @@
         const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : 3));
         const pA = prio(a), pB = prio(b);
         if (pA !== pB) return pA - pB;
-        if (pA === 3) {
-          const posA = a.position != null ? Number(a.position) : Infinity;
-          const posB = b.position != null ? Number(b.position) : Infinity;
-          if (posA !== posB) return posA - posB;
-        }
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
@@ -603,13 +594,21 @@
         li.style.display = "flex";
         li.style.justifyContent = "space-between";
         li.style.alignItems = "center";
+        li.style.padding = "5px 0";
 
         let content = "";
-        let posDisplay = (u.role === 'contestant' && u.position != null) ? `[# ${u.position}] ` : "";
-
-        if (u.role === 'host') content = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
-        else if (u.role === 'manager') content = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
+        // XỬ LÝ CHO USER SYNC_
+        if (u.name.startsWith("SYNC_")) {
+          content = `<b style="color: purple;">${u.name}</b> <span style="color: purple; font-weight:bold;">(System)</span>`;
+        }
+        else if (u.role === 'host') {
+          content = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
+        }
+        else if (u.role === 'manager') {
+          content = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
+        }
         else {
+          let posDisplay = (u.position != null) ? `[#${u.position}] ` : "";
           content = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
         }
 
@@ -617,14 +616,14 @@
         leftSpan.innerHTML = content;
         li.appendChild(leftSpan);
 
-        if (u.role === 'contestant') {
+        // Không cho xóa Host hoặc System
+        if (u.role === 'contestant' && !u.name.startsWith("SYNC_")) {
           const delBtn = document.createElement("button");
           delBtn.className = "btn-delete-user";
-          delBtn.innerText = "Xóa khỏi phòng";
+          delBtn.innerText = "Xóa";
           delBtn.onclick = () => kickUser(u.name);
           li.appendChild(delBtn);
         }
-
         ul.appendChild(li);
       });
     }
