@@ -128,6 +128,36 @@
       color: black;
     }
 
+    .btn-red-bold {
+      background-color: red;
+      color: white;
+      font-weight: bold;
+    }
+
+    .btn-yellow-bold {
+      background-color: yellow;
+      color: black;
+      font-weight: bold;
+    }
+
+    .btn-green-bold {
+      background-color: green;
+      color: white;
+      font-weight: bold;
+    }
+
+    .btn-blue-bold {
+      background-color: blue;
+      color: white;
+      font-weight: bold;
+    }
+
+    .btn-purple-bold {
+      background-color: purple;
+      color: white;
+      font-weight: bold;
+    }
+
     button:hover {
       background: #ff00cc !important;
       color: white !important;
@@ -276,18 +306,35 @@
     }
 
     .role-host {
-      color: blue;
+      color: green;
       font-weight: bold;
     }
 
     .role-manager {
-      color: red;
+      color: blue;
       font-weight: bold;
     }
 
     .role-contestant {
+      color: red;
+      font-weight: bold;
+    }
+
+    .lock-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      background: #fff;
       color: black;
       font-weight: bold;
+    }
+
+    .lock-list-item input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -333,6 +380,7 @@
       <button id="unlockAnswersPermanent">Mở đáp án (Vĩnh viễn)</button>
       <button id="lockAnswers">Khóa đáp án</button>
       <button id="resetAnswers">Reset đáp án</button>
+      <button id="btnLockAnswersFor" class="btn-red-bold">Khóa đáp án đối với</button>
     </div>
   </div>
 
@@ -342,6 +390,7 @@
       <button id="unlockBuzzPermanent">Mở chuông (Vĩnh viễn)</button>
       <button id="lockBuzz">Khóa chuông</button>
       <button id="resetBuzz">Reset chuông</button>
+      <button id="btnLockBuzzFor" class="btn-red-bold">Khóa chuông đối với</button>
     </div>
   </div>
   <br>
@@ -427,6 +476,32 @@
       <div class="popup-buttons" style="margin-top: 20px;">
         <button id="btnConfirmAdd" style="background: green; color: white; font-weight: bold;">Xác nhận</button>
         <button id="btnCloseAdd" style="background: red; color: white; font-weight: bold;">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lockAnswerPopup" class="popup-overlay">
+    <div class="popup-content">
+      <h3 style="color: black;">Khóa đáp án đối với</h3>
+      <div id="lockAnswerUserList"
+        style="max-height: 300px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc;"></div>
+      <div class="popup-buttons">
+        <button id="btnSaveLockAnswer" class="btn-green-bold">Lưu</button>
+        <button id="btnResetLockAnswer" class="btn-purple-bold">Reset tất cả</button>
+        <button id="btnCloseLockAnswer" class="btn-red-bold">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lockBuzzPopup" class="popup-overlay">
+    <div class="popup-content">
+      <h3 style="color: black;">Khóa chuông đối với</h3>
+      <div id="lockBuzzUserList"
+        style="max-height: 300px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc;"></div>
+      <div class="popup-buttons">
+        <button id="btnSaveLockBuzz" class="btn-green-bold">Lưu</button>
+        <button id="btnResetLockBuzz" class="btn-blue-bold">Reset tất cả</button>
+        <button id="btnCloseLockBuzz" class="btn-red-bold">Đóng</button>
       </div>
     </div>
   </div>
@@ -584,7 +659,7 @@
             bDisp.innerText = "Hết giờ!";
             if (!lockedBuzz) { lockedBuzz = true; updateUI(); autoLockRoomStatus(false); }
           } else {
-            bDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+            bDisp.innerHTML = `Thời gian còn lại: <span style="color:purple;">${formatCountdown(remain)}</span>`;
           }
         } else {
           bDisp.innerText = "Đang mở (Không giới hạn)";
@@ -600,7 +675,7 @@
             aDisp.innerText = "Hết giờ!";
             if (!lockedAnswer) { lockedAnswer = true; updateUI(); autoLockRoomStatus(true); }
           } else {
-            aDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
+            aDisp.innerHTML = `Thời gian còn lại: <span style="color:purple;">${formatCountdown(remain)}</span>`;
           }
         } else {
           aDisp.innerText = "Đang mở (Không giới hạn)";
@@ -668,6 +743,18 @@
       });
     }
 
+    async function kickUser(name) {
+      // Vì không dùng confirm(), tôi thực hiện xóa và thông báo qua showPopup
+      const { error } = await supabase.from('participants').delete().eq('room_code', currentRoom).eq('name', name);
+      if (!error) {
+        showPopup(`Đã xóa thí sinh ${name} khỏi phòng.`);
+        fetchUsers(); // Cập nhật lại danh sách ngay lập tức
+        renderUserListPopup(); // Vẽ lại popup
+      } else {
+        showPopup("Có lỗi xảy ra khi xóa thí sinh.");
+      }
+    }
+
     function renderUserListPopup() {
       const ul = document.querySelector("#listPopup ul");
       if (!ul) return;
@@ -675,6 +762,7 @@
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => { if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u); });
       let displayUsers = Array.from(uniqueParticipantsMap.values());
+
       displayUsers.sort((a, b) => {
         const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : (u.name?.startsWith("SYNC_") ? 4 : 3)));
         const pA = prio(a), pB = prio(b);
@@ -686,13 +774,34 @@
         }
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
+
       displayUsers.forEach(u => {
         const li = document.createElement("li");
+        li.style.display = "flex";
+        li.style.justifyContent = "space-between";
+        li.style.alignItems = "center";
+        li.style.padding = "5px 0";
+        li.style.borderBottom = "1px solid #eee";
+
+        const spanInfo = document.createElement("span");
         let posDisplay = (u.role === 'contestant' && u.position != null) ? `[# ${u.position}] ` : "";
-        if (u.role === 'host') li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
-        else if (u.role === 'manager') li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
-        else if (u.name?.startsWith("SYNC_")) li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
-        else li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
+
+        if (u.role === 'host') spanInfo.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
+        else if (u.role === 'manager') spanInfo.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
+        else if (u.name?.startsWith("SYNC_")) spanInfo.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
+        else spanInfo.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
+
+        li.appendChild(spanInfo);
+
+        // Thêm nút Xóa cho thí sinh
+        if (u.role === 'contestant' && !u.name?.startsWith("SYNC_")) {
+          const btnKick = document.createElement("button");
+          btnKick.innerText = "Xóa khỏi phòng";
+          btnKick.className = "btn-yellow-bold";
+          btnKick.onclick = () => kickUser(u.name);
+          li.appendChild(btnKick);
+        }
+
         ul.appendChild(li);
       });
     }
@@ -1058,6 +1167,74 @@
       };
     };
 
+    // --- Logic Khóa Đáp Án ---
+    document.getElementById("btnLockAnswersFor").onclick = () => {
+      const container = document.getElementById("lockAnswerUserList");
+      container.innerHTML = "";
+      const contestants = allParticipants.filter(p => p.role === 'contestant' && !p.name?.startsWith("SYNC_"));
+      contestants.forEach(p => {
+        const div = document.createElement("div");
+        div.className = "lock-list-item";
+        div.innerHTML = `<span>${p.name}</span> <input type="checkbox" data-name="${p.name}" ${p.is_answer_locked ? 'checked' : ''}>`;
+        container.appendChild(div);
+      });
+      document.getElementById("lockAnswerPopup").style.display = "flex";
+    };
+
+    document.getElementById("btnSaveLockAnswer").onclick = async () => {
+      const checks = document.querySelectorAll("#lockAnswerUserList input");
+      for (const chk of checks) {
+        const name = chk.getAttribute("data-name");
+        await supabase.from('participants').update({ is_answer_locked: chk.checked }).eq('room_code', currentRoom).eq('name', name);
+      }
+      showPopup("Đã lưu trạng thái khóa đáp án.");
+      document.getElementById("lockAnswerPopup").style.display = "none";
+      fetchUsers();
+    };
+
+    document.getElementById("btnResetLockAnswer").onclick = async () => {
+      await supabase.from('participants').update({ is_answer_locked: false }).eq('room_code', currentRoom).eq('role', 'contestant');
+      showPopup("Đã cho phép tất cả thí sinh gõ đáp án.");
+      document.getElementById("lockAnswerPopup").style.display = "none";
+      fetchUsers();
+    };
+
+    document.getElementById("btnCloseLockAnswer").onclick = () => document.getElementById("lockAnswerPopup").style.display = "none";
+
+
+    // --- Logic Khóa Chuông ---
+    document.getElementById("btnLockBuzzFor").onclick = () => {
+      const container = document.getElementById("lockBuzzUserList");
+      container.innerHTML = "";
+      const contestants = allParticipants.filter(p => p.role === 'contestant' && !p.name?.startsWith("SYNC_"));
+      contestants.forEach(p => {
+        const div = document.createElement("div");
+        div.className = "lock-list-item";
+        div.innerHTML = `<span>${p.name}</span> <input type="checkbox" data-name="${p.name}" ${p.is_buzz_locked ? 'checked' : ''}>`;
+        container.appendChild(div);
+      });
+      document.getElementById("lockBuzzPopup").style.display = "flex";
+    };
+
+    document.getElementById("btnSaveLockBuzz").onclick = async () => {
+      const checks = document.querySelectorAll("#lockBuzzUserList input");
+      for (const chk of checks) {
+        const name = chk.getAttribute("data-name");
+        await supabase.from('participants').update({ is_buzz_locked: chk.checked }).eq('room_code', currentRoom).eq('name', name);
+      }
+      showPopup("Đã lưu trạng thái khóa chuông.");
+      document.getElementById("lockBuzzPopup").style.display = "none";
+      fetchUsers();
+    };
+
+    document.getElementById("btnResetLockBuzz").onclick = async () => {
+      await supabase.from('participants').update({ is_buzz_locked: false }).eq('room_code', currentRoom).eq('role', 'contestant');
+      showPopup("Đã cho phép tất cả thí sinh bấm chuông.");
+      document.getElementById("lockBuzzPopup").style.display = "none";
+      fetchUsers();
+    };
+
+    document.getElementById("btnCloseLockBuzz").onclick = () => document.getElementById("lockBuzzPopup").style.display = "none";
     async function fetchInitialData() { await fetchRoomStatus(); await fetchAnswers(); await fetchBuzz(); await fetchUsers(); }
     window.addEventListener("beforeunload", () => { if (currentRoom) supabase.from("participants").delete().eq("room_code", currentRoom).eq("name", myName); });
     document.addEventListener("contextmenu", e => e.preventDefault());
