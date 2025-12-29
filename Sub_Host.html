@@ -744,14 +744,22 @@
     }
 
     async function kickUser(name) {
-      // Vì không dùng confirm(), tôi thực hiện xóa và thông báo qua showPopup
-      const { error } = await supabase.from('participants').delete().eq('room_code', currentRoom).eq('name', name);
+      const { error } = await supabase
+        .from('participants')
+        .delete()
+        .eq('room_code', currentRoom)
+        .eq('name', name);
+
       if (!error) {
+        // Cập nhật ngay mảng cục bộ để danh sách biến mất tức thì
+        allParticipants = allParticipants.filter(p => p.name !== name);
+        renderUserListPopup();
         showPopup(`Đã xóa thí sinh ${name} khỏi phòng.`);
-        fetchUsers(); // Cập nhật lại danh sách ngay lập tức
-        renderUserListPopup(); // Vẽ lại popup
+
+        // Gửi tín hiệu sync để các máy khác cập nhật (nếu cần)
+        fetchUsers();
       } else {
-        showPopup("Có lỗi xảy ra khi xóa thí sinh.");
+        showPopup("Lỗi khi xóa thí sinh: " + error.message);
       }
     }
 
@@ -1183,13 +1191,23 @@
 
     document.getElementById("btnSaveLockAnswer").onclick = async () => {
       const checks = document.querySelectorAll("#lockAnswerUserList input");
+      const updates = [];
+
       for (const chk of checks) {
         const name = chk.getAttribute("data-name");
-        await supabase.from('participants').update({ is_answer_locked: chk.checked }).eq('room_code', currentRoom).eq('name', name);
+        const isLocked = chk.checked;
+        updates.push(
+          supabase.from('participants')
+            .update({ is_answer_locked: isLocked })
+            .eq('room_code', currentRoom)
+            .eq('name', name)
+        );
       }
+
+      await Promise.all(updates);
       showPopup("Đã lưu trạng thái khóa đáp án.");
       document.getElementById("lockAnswerPopup").style.display = "none";
-      fetchUsers();
+      fetchUsers(); // Cập nhật lại allParticipants để có dữ liệu mới nhất
     };
 
     document.getElementById("btnResetLockAnswer").onclick = async () => {
@@ -1203,17 +1221,25 @@
 
 
     // --- Logic Khóa Chuông ---
-    document.getElementById("btnLockBuzzFor").onclick = () => {
-      const container = document.getElementById("lockBuzzUserList");
-      container.innerHTML = "";
-      const contestants = allParticipants.filter(p => p.role === 'contestant' && !p.name?.startsWith("SYNC_"));
-      contestants.forEach(p => {
-        const div = document.createElement("div");
-        div.className = "lock-list-item";
-        div.innerHTML = `<span>${p.name}</span> <input type="checkbox" data-name="${p.name}" ${p.is_buzz_locked ? 'checked' : ''}>`;
-        container.appendChild(div);
-      });
-      document.getElementById("lockBuzzPopup").style.display = "flex";
+    document.getElementById("btnSaveLockBuzz").onclick = async () => {
+      const checks = document.querySelectorAll("#lockBuzzUserList input");
+      const updates = [];
+
+      for (const chk of checks) {
+        const name = chk.getAttribute("data-name");
+        const isLocked = chk.checked;
+        updates.push(
+          supabase.from('participants')
+            .update({ is_buzz_locked: isLocked })
+            .eq('room_code', currentRoom)
+            .eq('name', name)
+        );
+      }
+
+      await Promise.all(updates);
+      showPopup("Đã lưu trạng thái khóa chuông.");
+      document.getElementById("lockBuzzPopup").style.display = "none";
+      fetchUsers();
     };
 
     document.getElementById("btnSaveLockBuzz").onclick = async () => {
