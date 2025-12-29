@@ -1145,9 +1145,15 @@
         const name = cb.getAttribute("data-name");
         const val = cb.checked;
         const updateObj = currentLockType === 'answer' ? { is_answer_locked: val } : { is_buzz_locked: val };
-        await supabase.from('participants').update(updateObj).eq('room_code', currentRoom).eq('name', name);
+
+        // Chỉ cập nhật cho thí sinh cụ thể trong phòng hiện tại
+        await supabase.from('participants')
+          .update(updateObj)
+          .eq('room_code', currentRoom)
+          .eq('name', name)
+          .eq('role', 'contestant');
       }
-      showPopup("Đã cập nhật trạng thái khóa!");
+      showPopup("Đã cập nhật trạng thái khóa cá nhân!");
       document.getElementById("individualLockPopup").style.display = "none";
     };
 

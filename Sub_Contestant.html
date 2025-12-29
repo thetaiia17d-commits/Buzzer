@@ -300,6 +300,8 @@
         let buzzOrder = [];
         let lastAnswerResetAt = null;
         let lastBuzzResetAt = null;
+        let isRoomAnswerLocked = true; // Trạng thái của phòng
+        let isRoomBuzzLocked = true;   // Trạng thái của phòng
         let individualAnswerLocked = false;
         let individualBuzzLocked = false;
         let localAnswerReceiveTime = 0;
@@ -353,9 +355,10 @@
             return (diff / 1000).toFixed(3) + "s";
         }
 
-        function updateAnswerUI(roomLocked) {
-            const finalLockState = roomLocked || individualAnswerLocked;
-
+        function updateAnswerUI(roomLockedState) {
+            isRoomAnswerLocked = roomLockedState;
+            // Logic: Nếu PHÒNG khóa HOẶC CÁ NHÂN bị khóa -> Thí sinh bị khóa
+            const finalLockState = isRoomAnswerLocked || individualAnswerLocked;
             lockedAnswer = finalLockState;
 
             btnSend.disabled = finalLockState;
@@ -364,10 +367,7 @@
             if (finalLockState) {
                 btnSend.classList.add("locked");
                 answerInput.classList.add("input-locked");
-
-                answerInput.placeholder = individualAnswerLocked
-                    ? "Bạn bị khóa đáp án"
-                    : "Đang khóa...";
+                answerInput.placeholder = individualAnswerLocked ? "Bạn bị khóa đáp án" : "Đang khóa...";
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
@@ -382,9 +382,9 @@
             answerInput.value = "";
         }
 
-        function updateBuzzUI(roomLocked) {
-            const finalLockState = roomLocked || individualBuzzLocked;
-
+        function updateBuzzUI(roomLockedState) {
+            isRoomBuzzLocked = roomLockedState;
+            const finalLockState = isRoomBuzzLocked || individualBuzzLocked;
             lockedBuzz = finalLockState;
 
             if (!finalLockState && !hasBuzzed) {
@@ -392,11 +392,9 @@
                 btnBuzz.innerText = "Bấm chuông";
             } else {
                 btnBuzz.classList.add("locked");
-                btnBuzz.innerText = individualBuzzLocked
-                    ? "Bạn bị khóa chuông"
-                    : hasBuzzed
-                        ? "Đã bấm chuông"
-                        : "Đang khóa";
+                if (individualBuzzLocked) btnBuzz.innerText = "Bạn bị khóa chuông";
+                else if (hasBuzzed) btnBuzz.innerText = "Đã bấm chuông";
+                else btnBuzz.innerText = "Đang khóa";
             }
         }
 
@@ -502,6 +500,20 @@
             loginArea.style.display = "none"; gameArea.style.display = "flex";
             answerStatusBox.style.display = "block"; resetAnswerStatusBox();
             await syncServerTime(); await fetchBuzzList(); handleRoomUpdate(room); subscribeRealtime();
+
+            const { data: mySelf } = await supabase.from('participants')
+                .select('is_answer_locked, is_buzz_locked')
+                .eq('room_code', code)
+                .eq('name', name)
+                .single();
+
+            if (mySelf) {
+                individualAnswerLocked = mySelf.is_answer_locked;
+                individualBuzzLocked = mySelf.is_buzz_locked;
+            }
+
+            myRoom = code; myName = name;
+            loginArea.style.display = "none"; gameArea.style.display = "flex";
         };
 
         btnSend.onclick = async () => {
@@ -690,13 +702,17 @@
         });
 
         document.getElementById("btnLeave").onclick = async () => {
-
             if (myRoom && myName) {
-                await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
+                // Xóa mình khỏi danh sách participants
+                await supabase.from("participants")
+                    .delete()
+                    .eq('room_code', myRoom)
+                    .eq('name', myName);
             }
-            localStorage.removeItem("contestantName");
-            localStorage.removeItem("roomCode");
-            // Reset giao diện về Login
+            // Ngắt kết nối các channel
+            if (roomChannel) supabase.removeChannel(roomChannel);
+            if (buzzesChannel) supabase.removeChannel(buzzesChannel);
+
             location.reload();
         };
         document.addEventListener("contextmenu", (e) => e.preventDefault());
