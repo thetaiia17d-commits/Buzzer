@@ -962,18 +962,15 @@
 
       // ===== PARTICIPANTS =====
       if (participantsChannel) supabase.removeChannel(participantsChannel);
-      participantsChannel = supabase
-        .channel(`participants-${currentRoom}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'participants',
-            filter: `room_code=eq.${currentRoom}`
-          },
-          fetchUsers
-        )
+      participantsChannel = supabase.channel('participants-all')
+        .on('postgres_changes', {
+          event: '*', // Quan trọng: Phải là '*' để bắt cả INSERT, UPDATE và DELETE
+          schema: 'public',
+          table: 'participants',
+          filter: `room_code=eq.${currentRoom}`
+        }, (payload) => {
+          fetchUsers(); // Tải lại danh sách khi có bất kỳ thay đổi nào
+        })
         .subscribe();
     }
 
@@ -1117,29 +1114,32 @@
     async function openIndividualLockPopup(type) {
       currentLockType = type;
       const title = type === 'answer' ? "Khóa đáp án đối với" : "Khóa chuông đối với";
-      const resetBtn = document.getElementById("btnResetIndividualLock");
-      const saveBtn = document.getElementById("btnSaveIndividualLock");
-
       document.getElementById("lockPopupTitle").innerText = title;
-      saveBtn.className = "success-popup"; // Màu xanh (giả định dùng class có sẵn)
-      saveBtn.style.background = "green"; saveBtn.style.color = "white";
 
-      if (type === 'answer') {resetBtn.style.background = "yellow"; resetBtn.style.color = "black";}
-      else {resetBtn.style.background = "blue";
-      resetBtn.style.color = "white";}
+      // Sửa Query: Chỉ lấy contestant và sắp xếp theo position y chang danh sách tham gia
+      const { data: users } = await supabase.from('participants')
+        .select('*')
+        .eq('room_code', currentRoom)
+        .eq('role', 'contestant') // Chỉ lấy thí sinh
+        .order('position', { ascending: true }); // Sắp xếp theo vị trí
 
-      const { data: users } = await supabase.from('participants').select('*').eq('room_code', currentRoom).eq('role', 'contestant');
       const listDiv = document.getElementById("lockUserList");
       listDiv.innerHTML = "";
+      if (users) {
+        users.forEach(u => {
+          const isChecked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
+          listDiv.innerHTML += `
+            <div class="popup-list-item">
+              <input type="checkbox" class="lock-check" data-name="${u.name}" ${isChecked ? 'checked' : ''}>
+              <label style="font-weight: bold; color: black;">${u.name} ${u.position ? `(#${u.position})` : ""}</label>
+            </div>`;
+        });
+      }
 
-      users.forEach(u => {
-        const isChecked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
-        listDiv.innerHTML += `
-                <div class="popup-list-item">
-                    <input type="checkbox" class="lock-check" data-name="${u.name}" ${isChecked ? 'checked' : ''}>
-                    <label>${u.name} ${u.position ? '(#' + u.position + ')' : ''}</label>
-                </div>`;
-      });
+      const btnReset = document.getElementById("btnResetIndividualLock");
+      btnReset.style.background = (type === 'answer') ? "yellow" : "blue";
+      btnReset.style.color = (type === 'answer') ? "black" : "white";
+
       document.getElementById("individualLockPopup").style.display = "flex";
     }
 

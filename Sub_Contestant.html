@@ -354,20 +354,22 @@
         }
 
         function updateAnswerUI(isLocked) {
-            // Nếu Host khóa riêng bạn, thì luôn luôn khóa dù phòng đang mở
-            const finalLock = isLocked || individualAnswerLocked;
-            lockedAnswer = finalLock;
-            btnSend.disabled = finalLock;
-            answerInput.readOnly = finalLock;
-            if (finalLock) {
+            // Sửa logic: Chỉ mở khi cả phòng MỞ VÀ cá nhân KHÔNG BỊ KHÓA
+            const finalLockState = isLocked || individualAnswerLocked;
+
+            lockedAnswer = finalLockState;
+            btnSend.disabled = finalLockState;
+            answerInput.readOnly = finalLockState;
+            if (finalLockState) {
                 btnSend.classList.add("locked");
                 answerInput.classList.add("input-locked");
-                if (individualAnswerLocked) answerInput.placeholder = "Bạn đã bị Host khóa tính năng này";
+                // Hiển thị thông báo cụ thể nếu bị khóa riêng
+                answerInput.placeholder = individualAnswerLocked ? "Bạn bị khóa đáp án" : "Đang khóa...";
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
                 answerInput.placeholder = "Nhập đáp án...";
-                setTimeout(() => { answerInput.focus(); }, 10);
+                setTimeout(() => answerInput.focus(), 10);
             }
         }
 
@@ -379,19 +381,19 @@
         }
 
         function updateBuzzUI(shouldLock) {
-            const finalLock = shouldLock || individualBuzzLocked;
-            lockedBuzz = finalLock;
-            if (!finalLock && !hasBuzzed) {
+            // Sửa logic: Chỉ mở chuông khi cả phòng MỞ VÀ cá nhân KHÔNG BỊ KHÓA
+            const finalLockState = shouldLock || individualBuzzLocked;
+
+            lockedBuzz = finalLockState;
+            if (!finalLockState && !hasBuzzed) {
                 btnBuzz.classList.remove("locked");
                 btnBuzz.innerText = "Bấm chuông";
             } else {
                 btnBuzz.classList.add("locked");
                 if (hasBuzzed) {
                     btnBuzz.innerText = "Đã bấm chuông";
-                } else if (individualBuzzLocked) {
-                    btnBuzz.innerText = "Bạn đã bị Host khóa chuông";
                 } else {
-                    btnBuzz.innerText = "Đang khóa";
+                    btnBuzz.innerText = individualBuzzLocked ? "Bạn đã bị khóa chuông" : "Đang khóa";
                 }
             }
         }
@@ -694,6 +696,8 @@
             if (myRoom && myName) {
                 await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
             }
+            localStorage.removeItem("contestantName");
+            localStorage.removeItem("roomCode");
             // Reset giao diện về Login
             location.reload();
         };
