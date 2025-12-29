@@ -353,23 +353,25 @@
             return (diff / 1000).toFixed(3) + "s";
         }
 
-        function updateAnswerUI(isLocked) {
-            // Sửa logic: Chỉ mở khi cả phòng MỞ VÀ cá nhân KHÔNG BỊ KHÓA
-            const finalLockState = isLocked || individualAnswerLocked;
+        function updateAnswerUI(roomLocked) {
+            const finalLockState = roomLocked || individualAnswerLocked;
 
             lockedAnswer = finalLockState;
+
             btnSend.disabled = finalLockState;
             answerInput.readOnly = finalLockState;
+
             if (finalLockState) {
                 btnSend.classList.add("locked");
                 answerInput.classList.add("input-locked");
-                // Hiển thị thông báo cụ thể nếu bị khóa riêng
-                answerInput.placeholder = individualAnswerLocked ? "Bạn bị khóa đáp án" : "Đang khóa...";
+
+                answerInput.placeholder = individualAnswerLocked
+                    ? "Bạn bị khóa đáp án"
+                    : "Đang khóa...";
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
                 answerInput.placeholder = "Nhập đáp án...";
-                setTimeout(() => answerInput.focus(), 10);
             }
         }
 
@@ -380,21 +382,21 @@
             answerInput.value = "";
         }
 
-        function updateBuzzUI(shouldLock) {
-            // Sửa logic: Chỉ mở chuông khi cả phòng MỞ VÀ cá nhân KHÔNG BỊ KHÓA
-            const finalLockState = shouldLock || individualBuzzLocked;
+        function updateBuzzUI(roomLocked) {
+            const finalLockState = roomLocked || individualBuzzLocked;
 
             lockedBuzz = finalLockState;
+
             if (!finalLockState && !hasBuzzed) {
                 btnBuzz.classList.remove("locked");
                 btnBuzz.innerText = "Bấm chuông";
             } else {
                 btnBuzz.classList.add("locked");
-                if (hasBuzzed) {
-                    btnBuzz.innerText = "Đã bấm chuông";
-                } else {
-                    btnBuzz.innerText = individualBuzzLocked ? "Bạn đã bị khóa chuông" : "Đang khóa";
-                }
+                btnBuzz.innerText = individualBuzzLocked
+                    ? "Bạn bị khóa chuông"
+                    : hasBuzzed
+                        ? "Đã bấm chuông"
+                        : "Đang khóa";
             }
         }
 
@@ -685,10 +687,6 @@
                 e.preventDefault();
                 btnBuzz.click();
             }
-        });
-
-        window.addEventListener("beforeunload", async () => {
-            if (myRoom && myName) await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
         });
 
         document.getElementById("btnLeave").onclick = async () => {

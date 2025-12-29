@@ -305,12 +305,6 @@
       border-bottom: 1px solid #eee;
     }
 
-    #btnSaveLockAns,
-    #btnSaveLockBuzz {
-      background: green;
-      color: white;
-    }
-
     #btnResetLockAns {
       background: yellow;
       color: black;
@@ -389,7 +383,7 @@
       <div id="lockUserList" style="text-align: left; max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
       </div>
       <div class="popup-buttons">
-        <button id="btnSaveIndividualLock">Lưu</button>
+        <button id="btnSaveIndividualLock" style="background-color: green; color: white;">Lưu</button>
         <button id="btnResetIndividualLock">Reset tất cả</button>
         <button id="btnCloseIndividualLock" class="btn-close-popup">Đóng</button>
       </div>
@@ -1121,7 +1115,9 @@
         .select('*')
         .eq('room_code', currentRoom)
         .eq('role', 'contestant') // Chỉ lấy thí sinh
+        .not('name', 'ilike', 'SYNC_%')
         .order('position', { ascending: true }); // Sắp xếp theo vị trí
+
 
       const listDiv = document.getElementById("lockUserList");
       listDiv.innerHTML = "";
