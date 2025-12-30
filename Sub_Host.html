@@ -1111,8 +1111,6 @@
       };
     };
 
-    // ========== FIX FOR INDIVIDUAL LOCK POPUP ==========
-    // Ensure persistent lock state for contestants and apply when host opens room.
     let currentLockType = 'answer';
 
     document.getElementById("btnLockAnsFor").onclick = () => openIndividualLockPopup('answer');
@@ -1123,6 +1121,7 @@
       const title = type === 'answer' ? "Khóa đáp án đối với" : "Khóa chuông đối với";
       document.getElementById("lockPopupTitle").innerText = title;
 
+      // Luôn fetch lại từ database để tránh cache
       const { data: users, error } = await supabase.from('participants')
         .select('name, position, is_answer_locked, is_buzz_locked')
         .eq('room_code', currentRoom)
@@ -1140,19 +1139,34 @@
       if (users && users.length > 0) {
         users.forEach(u => {
           const isLocked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
+          // Không đọng code bằng innerHTML tích lũy string! Phải tạo element cho chắc!
           const div = document.createElement('div');
           div.className = 'popup-list-item';
-          div.innerHTML = `
-        <input type="checkbox" class="lock-check" data-name="${u.name}" ${isLocked ? 'checked' : ''}>
-        <label style="font-weight:bold; color: black;">
-          ${u.name} ${u.position ? `(#${u.position})` : ""}
-          ${isLocked ? '<span style="color:red; margin-left:6px;">[Đang bị khóa]</span>' : ''}
-        </label>
-      `;
+
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.className = 'lock-check';
+          cb.setAttribute('data-name', u.name);
+          cb.checked = !!isLocked;
+
+          const label = document.createElement('label');
+          label.style.fontWeight = "bold";
+          label.style.color = "black";
+          label.textContent = `${u.name} ${u.position ? `(#${u.position})` : ""}`;
+          if (isLocked) {
+            const tag = document.createElement('span');
+            tag.style.color = 'red';
+            tag.style.marginLeft = '6px';
+            tag.textContent = "[Đang bị khóa]";
+            label.appendChild(tag);
+          }
+
+          div.appendChild(cb);
+          div.appendChild(label);
           listDiv.appendChild(div);
         });
       } else {
-        listDiv.innerHTML = "<p style='color:gray; text-align:center;'>Không có thí sinh nào.</p>";
+        listDiv.innerHTML = "<p style='color:gray; text-align:center;font-weight: bold;'>Không có thí sinh nào.</p>";
       }
 
       const btnReset = document.getElementById("btnResetIndividualLock");
@@ -1162,13 +1176,13 @@
       document.getElementById("individualLockPopup").style.display = "flex";
     }
 
-    // Lưu trạng thái khóa cá nhân khi người dùng bấm Lưu
+    // Lưu trạng thái khóa cá nhân khi bấm Lưu
     document.getElementById("btnSaveIndividualLock").onclick = async () => {
       const checks = Array.from(document.querySelectorAll(".lock-check"));
       const checkedNames = checks.filter(cb => cb.checked).map(cb => cb.getAttribute('data-name'));
       const uncheckedNames = checks.filter(cb => !cb.checked).map(cb => cb.getAttribute('data-name'));
 
-      // Update đồng thời
+      // Nút xử lý
       const btnSave = document.getElementById("btnSaveIndividualLock");
       const originalText = btnSave.innerText;
       btnSave.innerText = "Đang lưu...";
@@ -1194,7 +1208,7 @@
             .eq('role', 'contestant');
         }
         showPopup("Đã cập nhật trạng thái khóa!");
-        await fetchUsers();
+        await fetchUsers(); // cập nhật lại UI danh sách user
         document.getElementById("individualLockPopup").style.display = "none";
       } catch (err) {
         showPopup("Lỗi khi lưu: " + (err.message || err), "error");
@@ -1204,7 +1218,7 @@
       }
     };
 
-    // Mở khóa toàn bộ
+    // Reset toàn bộ
     document.getElementById("btnResetIndividualLock").onclick = async () => {
       const updateObj = currentLockType === 'answer' ? { is_answer_locked: false } : { is_buzz_locked: false };
       await supabase.from('participants')
@@ -1216,6 +1230,7 @@
       await fetchUsers();
     };
 
+    // Đóng popup
     document.getElementById("btnCloseIndividualLock").onclick = () => {
       document.getElementById("individualLockPopup").style.display = "none";
     };
