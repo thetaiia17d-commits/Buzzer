@@ -696,16 +696,21 @@
         if (pA !== pB) return pA - pB;
 
         if (pA === 3) {
-          // Sửa logic so sánh vị trí: Nếu null thì coi như số rất lớn (đứng cuối)
-          const valA = (a.position !== null && a.position !== undefined && a.position !== "") ? Number(a.position) : 999999;
-          const valB = (b.position !== null && b.position !== undefined && b.position !== "") ? Number(b.position) : 999999;
+          // Thử chuyển sang số để so sánh, nếu không phải số (NaN) thì coi như giá trị lớn
+          const valA = (a.position !== null && a.position !== undefined && a.position !== "") ? a.position : "zzzz";
+          const valB = (b.position !== null && b.position !== undefined && b.position !== "") ? b.position : "zzzz";
 
-          if (valA !== valB) return valA - valB;
+          // Nếu cả 2 đều là dạng số (ví dụ "1" và "10")
+          if (!isNaN(valA) && !isNaN(valB)) {
+            if (Number(valA) !== Number(valB)) return Number(valA) - Number(valB);
+          }
+          // Nếu là chữ (ví dụ "Bàn A", "Bàn B")
+          else if (valA !== valB) {
+            return valA.localeCompare(valB);
+          }
 
-          // Nếu vị trí bằng nhau (hoặc cùng null) thì xếp theo thời gian vào phòng
           return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         }
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
       // 3. Render

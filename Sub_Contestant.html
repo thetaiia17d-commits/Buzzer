@@ -452,25 +452,41 @@
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
             const name = nameInput.value.trim();
-            const posValue = document.getElementById("positionInput").value.trim();
+            const posInput = document.getElementById("positionInput").value.trim(); //
 
-            if (!codeString || !name || codeString.length !== 6) return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
+            if (!codeString || !name || codeString.length !== 6) {
+                return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
+            }
 
             const code = parseInt(codeString);
+
+            // Kiểm tra phòng tồn tại
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).maybeSingle();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-            await supabase.from('participants').insert([{
+            // XỬ LÝ LỖI: Chuyển vị trí thành số hoặc null nếu để trống để DB không bị lỗi kiểu dữ liệu
+            const posValue = posInput === "" ? null : parseInt(posInput);
+
+            // Thực hiện thêm thí sinh và CHỈ chuyển trang nếu thành công
+            const { error: joinError } = await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
                 role: 'contestant',
                 position: posValue
             }]);
 
-            myRoom = code; myName = name;
-            loginArea.style.display = "none"; gameArea.style.display = "flex";
-            answerStatusBox.style.display = "block"; resetAnswerStatusBox();
-            await syncServerTime(); await fetchBuzzList(); handleRoomUpdate(room); subscribeRealtime();
+            // Nếu thành công mới thực hiện các lệnh dưới đây
+            myRoom = code;
+            myName = name;
+            loginArea.style.display = "none";
+            gameArea.style.display = "flex";
+            answerStatusBox.style.display = "block";
+            resetAnswerStatusBox();
+
+            await syncServerTime();
+            await fetchBuzzList();
+            handleRoomUpdate(room);
+            subscribeRealtime();
         };
 
         btnSend.onclick = async () => {
@@ -542,7 +558,7 @@
                     showPopup("Host đã reset chuông!");
                 })
                 .subscribe();
-            buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); buzzSound.play().catch(e => console.log("Audio play blocked"));}).subscribe();
+            buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); buzzSound.play().catch(e => console.log("Audio play blocked")); }).subscribe();
         }
 
         async function handleRoomUpdate(roomData) {
