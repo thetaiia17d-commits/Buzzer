@@ -672,27 +672,69 @@
       const ul = document.querySelector("#listPopup ul");
       if (!ul) return;
       ul.innerHTML = "";
+
+      // 1. Lấy danh sách duy nhất theo tên
       const uniqueParticipantsMap = new Map();
-      allParticipants.forEach(u => { if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u); });
+      allParticipants.forEach(u => {
+        if (!uniqueParticipantsMap.has(u.name)) {
+          uniqueParticipantsMap.set(u.name, u);
+        }
+      });
       let displayUsers = Array.from(uniqueParticipantsMap.values());
+
+      // 2. Sắp xếp
       displayUsers.sort((a, b) => {
-        const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : (u.name?.startsWith("SYNC_") ? 4 : 3)));
-        const pA = prio(a), pB = prio(b);
+        const prio = u => {
+          if (u.role === "host") return 1;
+          if (u.role === "manager") return 2;
+          if (u.name?.startsWith("SYNC_")) return 4;
+          return 3;
+        };
+
+        const pA = prio(a);
+        const pB = prio(b);
         if (pA !== pB) return pA - pB;
+
         if (pA === 3) {
-          const posA = a.position != null ? Number(a.position) : Infinity;
-          const posB = b.position != null ? Number(b.position) : Infinity;
-          if (posA !== posB) return posA - posB;
+          // Sửa logic so sánh vị trí: Nếu null thì coi như số rất lớn (đứng cuối)
+          const valA = (a.position !== null && a.position !== undefined && a.position !== "") ? Number(a.position) : 999999;
+          const valB = (b.position !== null && b.position !== undefined && b.position !== "") ? Number(b.position) : 999999;
+
+          if (valA !== valB) return valA - valB;
+
+          // Nếu vị trí bằng nhau (hoặc cùng null) thì xếp theo thời gian vào phòng
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         }
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
+
+      // 3. Render
       displayUsers.forEach(u => {
         const li = document.createElement("li");
-        let posDisplay = (u.role === 'contestant' && u.position != null) ? `[# ${u.position}] ` : "";
-        if (u.role === 'host') li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
-        else if (u.role === 'manager') li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
-        else if (u.name?.startsWith("SYNC_")) li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
-        else li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
+
+        const hasValidPos =
+          u.position !== null &&
+          u.position !== undefined &&
+          String(u.position).trim() !== "";
+
+        const posDisplay =
+          u.role === "contestant" && hasValidPos ? `[# ${u.position}] ` : "";
+
+        if (u.role === "host") {
+          li.innerHTML = `<b style="color: green;">${u.name}</b>
+        <span style="color: green; font-weight:bold;">(Host)</span>`;
+        } else if (u.role === "manager") {
+          li.innerHTML = `<b style="color: blue;">${u.name}</b>
+        <span style="color: blue; font-weight:bold;">(Quản lý)</span>`;
+        } else if (u.name?.startsWith("SYNC_")) {
+          li.innerHTML = `<b style="color: purple;">${u.name}</b>
+        <span style="color: purple; font-weight:bold;">(System)</span>`;
+        } else {
+          // Thí sinh: LUÔN hiện tên, position chỉ là phụ
+          li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b>
+        <span style="color: red; font-weight:bold;">(Thí sinh)</span>`;
+        }
+
         ul.appendChild(li);
       });
     }

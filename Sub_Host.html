@@ -673,59 +673,68 @@
       if (!ul) return;
       ul.innerHTML = "";
 
-      // Lọc lấy danh sách user duy nhất theo tên
+      // 1. Lấy danh sách duy nhất theo tên
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => {
-        if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u);
+        if (!uniqueParticipantsMap.has(u.name)) {
+          uniqueParticipantsMap.set(u.name, u);
+        }
       });
       let displayUsers = Array.from(uniqueParticipantsMap.values());
 
-      // Sắp xếp danh sách
+      // 2. Sắp xếp
       displayUsers.sort((a, b) => {
-        // 1. Phân loại ưu tiên theo Role
-        const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : (u.name?.startsWith("SYNC_") ? 4 : 3)));
-        const pA = prio(a), pB = prio(b);
+        const prio = u => {
+          if (u.role === "host") return 1;
+          if (u.role === "manager") return 2;
+          if (u.name?.startsWith("SYNC_")) return 4;
+          return 3;
+        };
+
+        const pA = prio(a);
+        const pB = prio(b);
         if (pA !== pB) return pA - pB;
 
-        // 2. Nếu cùng là Thí sinh (Role = 3)
         if (pA === 3) {
-          const hasPosA = a.position !== null && a.position !== undefined && a.position !== "";
-          const hasPosB = b.position !== null && b.position !== undefined && b.position !== "";
+          // Sửa logic so sánh vị trí: Nếu null thì coi như số rất lớn (đứng cuối)
+          const valA = (a.position !== null && a.position !== undefined && a.position !== "") ? Number(a.position) : 999999;
+          const valB = (b.position !== null && b.position !== undefined && b.position !== "") ? Number(b.position) : 999999;
 
-          // Trường hợp 1: Cả hai đều có vị trí -> So sánh vị trí
-          if (hasPosA && hasPosB) {
-            return Number(a.position) - Number(b.position);
-          }
-          // Trường hợp 2: Chỉ A có vị trí -> A lên trước
-          if (hasPosA && !hasPosB) return -1;
-          // Trường hợp 3: Chỉ B có vị trí -> B lên trước
-          if (!hasPosA && hasPosB) return 1;
+          if (valA !== valB) return valA - valB;
 
-          // Trường hợp 4: Cả hai không có vị trí -> So sánh thời gian vào phòng (created_at)
+          // Nếu vị trí bằng nhau (hoặc cùng null) thì xếp theo thời gian vào phòng
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         }
-
-        // Mặc định hoặc khi cùng nhóm không vị trí: Sắp xếp theo thời gian tham gia
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
-      // Render ra giao diện
+      // 3. Render
       displayUsers.forEach(u => {
         const li = document.createElement("li");
 
-        // Kiểm tra xem có vị trí hợp lệ không để hiển thị [# số]
-        const hasPos = u.position !== null && u.position !== undefined && u.position !== "";
-        let posDisplay = (u.role === 'contestant' && hasPos) ? `[# ${u.position}] ` : "";
+        const hasValidPos =
+          u.position !== null &&
+          u.position !== undefined &&
+          String(u.position).trim() !== "";
 
-        if (u.role === 'host') {
-          li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
-        } else if (u.role === 'manager') {
-          li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue; font-weight:bold;">(Quản lý)</span>`;
+        const posDisplay =
+          u.role === "contestant" && hasValidPos ? `[# ${u.position}] ` : "";
+
+        if (u.role === "host") {
+          li.innerHTML = `<b style="color: green;">${u.name}</b>
+        <span style="color: green; font-weight:bold;">(Host)</span>`;
+        } else if (u.role === "manager") {
+          li.innerHTML = `<b style="color: blue;">${u.name}</b>
+        <span style="color: blue; font-weight:bold;">(Quản lý)</span>`;
         } else if (u.name?.startsWith("SYNC_")) {
-          li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple; font-weight:bold;">(System)</span>`;
+          li.innerHTML = `<b style="color: purple;">${u.name}</b>
+        <span style="color: purple; font-weight:bold;">(System)</span>`;
         } else {
-          // Thí sinh: Có hay không có position đều hiện tên, màu đỏ
-          li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red; font-weight:bold;">(Thí sinh)</span>`;
+          // Thí sinh: LUÔN hiện tên, position chỉ là phụ
+          li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b>
+        <span style="color: red; font-weight:bold;">(Thí sinh)</span>`;
         }
+
         ul.appendChild(li);
       });
     }
