@@ -581,6 +581,8 @@
                     buzzOrder = []; renderBuzzTable(); updateBuzzUI(lockedBuzz);
                     showPopup("Host đã reset chuông!");
                 })
+                .subscribe();
+
             supabase.channel('my-status-' + myName)
                 .on('postgres_changes', {
                     event: 'UPDATE',
@@ -591,8 +593,8 @@
                     individualAnswerLocked = payload.new.is_answer_locked;
                     individualBuzzLocked = payload.new.is_buzz_locked;
                     // Cập nhật ngay lập tức UI theo trạng thái phòng hiện tại
-                    updateAnswerUI(lockedAnswer);
-                    updateBuzzUI(lockedBuzz);
+                    updateAnswerUI(isRoomAnswerLocked);
+                    updateBuzzUI(isRoomBuzzLocked);
                 })
                 .subscribe();
             buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); buzzSound.play().catch(e => console.log("Audio play blocked")); }).subscribe();
@@ -700,6 +702,15 @@
 
         document.getElementById("btnLeave").onclick = async () => {
             if (myRoom && myName) {
+                // Gửi tín hiệu rời phòng trước khi xóa
+                if (roomChannel) {
+                    await roomChannel.send({
+                        type: 'broadcast',
+                        event: 'user-leave',
+                        payload: { name: myName }
+                    });
+                }
+
                 // Xóa mình khỏi danh sách participants
                 await supabase.from("participants")
                     .delete()

@@ -885,6 +885,17 @@
           },
           payload => handleRoomUpdate(payload.new)
         )
+        .on(
+          'broadcast',
+          { event: 'user-leave' },
+          (payload) => {
+            if (payload.payload && payload.payload.name) {
+              // Xóa user khỏi danh sách local và render lại ngay lập tức
+              allParticipants = allParticipants.filter(p => p.name !== payload.payload.name);
+              renderUserListPopup();
+            }
+          }
+        )
         .subscribe();
 
       // ===== ANSWERS =====
