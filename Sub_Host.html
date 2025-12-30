@@ -1118,10 +1118,10 @@
 
     async function openIndividualLockPopup(type) {
       currentLockType = type;
-      const title = type === 'answer' ? "Khóa đáp án đối với" : "Khóa chuông đối với";
-      document.getElementById("lockPopupTitle").innerText = title;
+      document.getElementById("lockPopupTitle").innerText = type === 'answer'
+        ? "Khóa đáp án đối với" : "Khóa chuông đối với";
 
-      // Luôn fetch lại từ database để tránh cache
+      // LUÔN fetch mới
       const { data: users, error } = await supabase.from('participants')
         .select('name, position, is_answer_locked, is_buzz_locked')
         .eq('room_code', currentRoom)
@@ -1129,17 +1129,15 @@
         .not('name', 'ilike', 'SYNC_%')
         .order('position', { ascending: true });
 
-      if (error) {
-        showPopup("Lỗi tải danh sách thí sinh", "error");
-        return;
-      }
-
       const listDiv = document.getElementById("lockUserList");
       listDiv.innerHTML = "";
-      if (users && users.length > 0) {
+
+      if (!users || users.length === 0) {
+        listDiv.innerHTML = "<p style='color:gray; text-align:center;'>Không có thí sinh nào.</p>";
+      } else {
         users.forEach(u => {
           const isLocked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
-          // Không đọng code bằng innerHTML tích lũy string! Phải tạo element cho chắc!
+
           const div = document.createElement('div');
           div.className = 'popup-list-item';
 
@@ -1165,8 +1163,6 @@
           div.appendChild(label);
           listDiv.appendChild(div);
         });
-      } else {
-        listDiv.innerHTML = "<p style='color:gray; text-align:center;font-weight: bold;'>Không có thí sinh nào.</p>";
       }
 
       const btnReset = document.getElementById("btnResetIndividualLock");
@@ -1179,36 +1175,41 @@
     // Lưu trạng thái khóa cá nhân khi bấm Lưu
     document.getElementById("btnSaveIndividualLock").onclick = async () => {
       const checks = Array.from(document.querySelectorAll(".lock-check"));
+      // Phải lấy cả checked và unchecked, vì 2 chiều!
       const checkedNames = checks.filter(cb => cb.checked).map(cb => cb.getAttribute('data-name'));
       const uncheckedNames = checks.filter(cb => !cb.checked).map(cb => cb.getAttribute('data-name'));
 
-      // Nút xử lý
       const btnSave = document.getElementById("btnSaveIndividualLock");
       const originalText = btnSave.innerText;
       btnSave.innerText = "Đang lưu...";
       btnSave.disabled = true;
 
       try {
-        // Đặt lock = true cho các checkboxes được chọn
+        // Nếu có người được chọn, thì cập nhật bị khóa
         if (checkedNames.length > 0) {
-          const updateObj = currentLockType === 'answer' ? { is_answer_locked: true } : { is_buzz_locked: true };
+          const updateObj = currentLockType === 'answer'
+            ? { is_answer_locked: true }
+            : { is_buzz_locked: true };
           await supabase.from('participants')
             .update(updateObj)
             .in('name', checkedNames)
             .eq('room_code', currentRoom)
             .eq('role', 'contestant');
         }
-        // Đặt lock = false cho các checkboxes không được chọn
+        // Nếu có người KHÔNG được chọn, thì mở khóa
         if (uncheckedNames.length > 0) {
-          const updateObj2 = currentLockType === 'answer' ? { is_answer_locked: false } : { is_buzz_locked: false };
+          const updateObj2 = currentLockType === 'answer'
+            ? { is_answer_locked: false }
+            : { is_buzz_locked: false };
           await supabase.from('participants')
             .update(updateObj2)
             .in('name', uncheckedNames)
             .eq('room_code', currentRoom)
             .eq('role', 'contestant');
         }
-        showPopup("Đã cập nhật trạng thái khóa!");
-        await fetchUsers(); // cập nhật lại UI danh sách user
+        // Sau khi lưu, fetch lại danh sách hoặc đóng popup
+        await fetchUsers(); // Cập nhật lại trạng thái local
+        showPopup("Đã lưu thành công!");
         document.getElementById("individualLockPopup").style.display = "none";
       } catch (err) {
         showPopup("Lỗi khi lưu: " + (err.message || err), "error");
