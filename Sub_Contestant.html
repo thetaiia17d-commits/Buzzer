@@ -488,29 +488,62 @@
             const name = nameInput.value.trim();
             const posValue = document.getElementById("positionInput").value.trim();
 
-            if (!codeString || !name || codeString.length !== 6) return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
+            if (!codeString || !name || codeString.length !== 6)
+                return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
 
             const code = parseInt(codeString);
-            const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).maybeSingle();
-            if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
+
+            const { data: room, error: roomError } = await supabase
+                .from('rooms')
+                .select('*')
+                .eq('room_code', code)
+                .maybeSingle();
+
+            if (roomError || !room)
+                return showPopup("Phòng không tồn tại!", "error");
+
+            // ====== FIX CỐT LÕI: GIỮ TRẠNG THÁI KHÓA CŨ ======
+            const { data: lastRecord } = await supabase
+                .from('participants')
+                .select('is_answer_locked, is_buzz_locked')
+                .eq('room_code', code)
+                .eq('name', name)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
 
             await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
                 role: 'contestant',
-                position: posValue
+                position: posValue,
+                is_answer_locked: lastRecord?.is_answer_locked ?? false,
+                is_buzz_locked: lastRecord?.is_buzz_locked ?? false
             }]);
+            // ===============================================
 
-            myRoom = code; myName = name;
-            loginArea.style.display = "none"; gameArea.style.display = "flex";
-            answerStatusBox.style.display = "block"; resetAnswerStatusBox();
-            await syncServerTime(); await fetchBuzzList(); handleRoomUpdate(room); subscribeRealtime();
+            myRoom = code;
+            myName = name;
 
-            const { data: mySelf } = await supabase.from('participants')
+            loginArea.style.display = "none";
+            gameArea.style.display = "flex";
+            answerStatusBox.style.display = "block";
+            resetAnswerStatusBox();
+
+            await syncServerTime();
+            await fetchBuzzList();
+            handleRoomUpdate(room);
+            subscribeRealtime();
+
+            // Lấy trạng thái khóa cuối cùng (đảm bảo UI đúng)
+            const { data: mySelf } = await supabase
+                .from('participants')
                 .select('is_answer_locked, is_buzz_locked')
                 .eq('room_code', code)
                 .eq('name', name)
-                .single();
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
 
             if (mySelf) {
                 individualAnswerLocked = mySelf.is_answer_locked;
@@ -518,9 +551,6 @@
                 updateAnswerUI(isRoomAnswerLocked);
                 updateBuzzUI(isRoomBuzzLocked);
             }
-
-            myRoom = code; myName = name;
-            loginArea.style.display = "none"; gameArea.style.display = "flex";
         };
 
         btnSend.onclick = async () => {
