@@ -745,26 +745,8 @@
         });
 
         document.getElementById("btnLeave").onclick = async () => {
-            if (myRoom && myName) {
-                // Gửi tín hiệu rời phòng trước khi xóa
-                if (roomChannel) {
-                    await roomChannel.send({
-                        type: 'broadcast',
-                        event: 'user-leave',
-                        payload: { name: myName }
-                    });
-                }
-
-                // Xóa mình khỏi danh sách participants
-                await supabase.from("participants")
-                    .delete()
-                    .eq('room_code', myRoom)
-                    .eq('name', myName);
-            }
-            // Ngắt kết nối các channel
             if (roomChannel) supabase.removeChannel(roomChannel);
             if (buzzesChannel) supabase.removeChannel(buzzesChannel);
-
             location.reload();
         };
         document.addEventListener("contextmenu", (e) => e.preventDefault());
