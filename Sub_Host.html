@@ -276,48 +276,58 @@
     }
 
     .role-host {
-      color: green;
-      font-weight: bold;
-    }
-
-    .role-manager {
       color: blue;
       font-weight: bold;
     }
 
-    .role-contestant {
+    .role-manager {
       color: red;
       font-weight: bold;
     }
 
-    .btn-lock-for {
-      background: red !important;
-      color: white !important;
+    .role-contestant {
+      color: black;
       font-weight: bold;
     }
 
-    .popup-list-item {
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      gap: 10px;
-      padding: 8px;
-      border-bottom: 1px solid #eee;
-    }
-
-    #btnResetLockAns {
-      background: yellow;
-      color: black;
-    }
-
-    #btnResetLockBuzz {
-      background: blue;
+    .btn-lock-ans {
+      background: green;
       color: white;
+      font-weight: bold;
+      font-size: 12px;
+      padding: 5px;
     }
 
-    .btn-close-popup {
+    .btn-lock-buzz {
+      background: yellow;
+      color: white;
+      font-weight: bold;
+      font-size: 12px;
+      padding: 5px;
+      text-shadow: 1px 1px 1px #000;
+    }
+
+    .btn-unlock-ans {
+      background: purple;
+      color: white;
+      font-weight: bold;
+      font-size: 12px;
+      padding: 5px;
+    }
+
+    .btn-unlock-buzz {
       background: red;
       color: white;
+      font-weight: bold;
+      font-size: 12px;
+      padding: 5px;
+    }
+
+    .user-controls {
+      margin-top: 5px;
+      display: flex;
+      gap: 5px;
+      justify-content: flex-start;
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -363,7 +373,6 @@
       <button id="unlockAnswersPermanent">Mở đáp án (Vĩnh viễn)</button>
       <button id="lockAnswers">Khóa đáp án</button>
       <button id="resetAnswers">Reset đáp án</button>
-      <button id="btnLockAnsFor" class="btn-lock-for">Khóa đáp án đối với</button>
     </div>
   </div>
 
@@ -373,20 +382,6 @@
       <button id="unlockBuzzPermanent">Mở chuông (Vĩnh viễn)</button>
       <button id="lockBuzz">Khóa chuông</button>
       <button id="resetBuzz">Reset chuông</button>
-      <button id="btnLockBuzzFor" class="btn-lock-for">Khóa chuông đối với</button>
-    </div>
-  </div>
-
-  <div id="individualLockPopup" class="popup-overlay">
-    <div class="popup-content">
-      <h3 id="lockPopupTitle">Khóa thí sinh</h3>
-      <div id="lockUserList" style="text-align: left; max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
-      </div>
-      <div class="popup-buttons">
-        <button id="btnSaveIndividualLock" style="background-color: green; color: white;">Lưu</button>
-        <button id="btnResetIndividualLock">Reset tất cả</button>
-        <button id="btnCloseIndividualLock" class="btn-close-popup">Đóng</button>
-      </div>
     </div>
   </div>
   <br>
@@ -463,6 +458,7 @@
           Chuông</label>
       </div>
       <div class="control-item" style="justify-content: center;">
+        <label style="color:black;">Số thí sinh:</label>
         <input type="number" id="numAddRows" value="1" min="1" max="20"
           style="width: 60px; font-weight: bold; color: black;">
         <button onclick="generateAddRows()" style="background: purple; color: white; margin-left: 10px;">Tạo ô</button>
@@ -628,7 +624,7 @@
             bDisp.innerText = "Hết giờ!";
             if (!lockedBuzz) { lockedBuzz = true; updateUI(); autoLockRoomStatus(false); }
           } else {
-            bDisp.innerHTML = `Thời gian còn lại: <span style="color:purple;">${formatCountdown(remain)}</span>`;
+            bDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
           }
         } else {
           bDisp.innerText = "Đang mở (Không giới hạn)";
@@ -644,7 +640,7 @@
             aDisp.innerText = "Hết giờ!";
             if (!lockedAnswer) { lockedAnswer = true; updateUI(); autoLockRoomStatus(true); }
           } else {
-            aDisp.innerHTML = `Thời gian còn lại: <span style="color:purple;">${formatCountdown(remain)}</span>`;
+            aDisp.innerHTML = `Thời gian còn lại: <span style="color:red;">${formatCountdown(remain)}</span>`;
           }
         } else {
           aDisp.innerText = "Đang mở (Không giới hạn)";
@@ -716,29 +712,70 @@
       const ul = document.querySelector("#listPopup ul");
       if (!ul) return;
       ul.innerHTML = "";
+
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => { if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u); });
       let displayUsers = Array.from(uniqueParticipantsMap.values());
+
+      // Sắp xếp... (giữ nguyên logic cũ)
       displayUsers.sort((a, b) => {
         const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : (u.name?.startsWith("SYNC_") ? 4 : 3)));
         const pA = prio(a), pB = prio(b);
         if (pA !== pB) return pA - pB;
-        if (pA === 3) {
-          const posA = a.position != null ? Number(a.position) : Infinity;
-          const posB = b.position != null ? Number(b.position) : Infinity;
-          if (posA !== posB) return posA - posB;
-        }
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
+
       displayUsers.forEach(u => {
         const li = document.createElement("li");
-        let posDisplay = (u.role === 'contestant' && u.position != null) ? `[# ${u.position}] ` : "";
-        if (u.role === 'host') li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
-        else if (u.role === 'manager') li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
-        else if (u.name?.startsWith("SYNC_")) li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
-        else li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
+        li.style.borderBottom = "1px solid #ccc";
+        li.style.padding = "10px 0";
+
+        let roleInfo = "";
+        let controls = "";
+
+        if (u.role === 'host') {
+          roleInfo = `<b style="color: green;">${u.name}</b> <span style="color: green;">(Host)</span>`;
+        } else if (u.role === 'manager') {
+          roleInfo = `<b style="color: blue;">${u.name}</b> <span style="color: blue;">(Quản lý)</span>`;
+        } else if (u.name?.startsWith("SYNC_")) {
+          roleInfo = `<b style="color: purple;">${u.name}</b> <span>(System)</span>`;
+        } else {
+          // Role thí sinh
+          const ansStatus = u.is_answer_locked ? "❌" : "✅";
+          const buzzStatus = u.is_buzz_locked ? "❌" : "✅";
+
+          roleInfo = `<b style="color: red;">[#${u.position || 0}] ${u.name}</b> 
+                    <span style="font-size:12px"> (Đáp án: ${ansStatus} | Chuông: ${buzzStatus})</span>`;
+
+          // Hàng 4 nút bấm
+          controls = `
+          <div class="user-controls">
+            <button class="btn-lock-ans" onclick="updateParticipantLock('${u.name}', 'is_answer_locked', true)">Khóa đáp án</button>
+            <button class="btn-lock-buzz" onclick="updateParticipantLock('${u.name}', 'is_buzz_locked', true)">Khóa chuông</button>
+            <button class="btn-unlock-ans" onclick="updateParticipantLock('${u.name}', 'is_answer_locked', false)">Mở đáp án</button>
+            <button class="btn-unlock-buzz" onclick="updateParticipantLock('${u.name}', 'is_buzz_locked', false)">Mở chuông</button>
+          </div>
+        `;
+        }
+
+        li.innerHTML = `<div>${roleInfo}</div>${controls}`;
         ul.appendChild(li);
       });
+    }
+
+    async function updateParticipantLock(userName, field, value) {
+      const { error } = await supabase
+        .from('participants')
+        .update({ [field]: value })
+        .eq('room_code', currentRoom)
+        .eq('name', userName);
+
+      if (error) {
+        showPopup("Lỗi: " + error.message, "error");
+      } else {
+        showPopup(`Đã cập nhật cho ${userName}`);
+        // Realtime sẽ tự gọi fetchUsers() để cập nhật UI popup
+      }
     }
 
     function generateAddRows() {
@@ -884,17 +921,6 @@
           },
           payload => handleRoomUpdate(payload.new)
         )
-        .on(
-          'broadcast',
-          { event: 'user-leave' },
-          (payload) => {
-            if (payload.payload && payload.payload.name) {
-              // Xóa user khỏi danh sách local và render lại ngay lập tức
-              allParticipants = allParticipants.filter(p => p.name !== payload.payload.name);
-              renderUserListPopup();
-            }
-          }
-        )
         .subscribe();
 
       // ===== ANSWERS =====
@@ -966,15 +992,18 @@
 
       // ===== PARTICIPANTS =====
       if (participantsChannel) supabase.removeChannel(participantsChannel);
-      participantsChannel = supabase.channel('participants-all')
-        .on('postgres_changes', {
-          event: '*', // Quan trọng: Phải là '*' để bắt cả INSERT, UPDATE và DELETE
-          schema: 'public',
-          table: 'participants',
-          filter: `room_code=eq.${currentRoom}`
-        }, (payload) => {
-          fetchUsers(); // Tải lại danh sách khi có bất kỳ thay đổi nào
-        })
+      participantsChannel = supabase
+        .channel(`participants-${currentRoom}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'participants',
+            filter: `room_code=eq.${currentRoom}`
+          },
+          fetchUsers
+        )
         .subscribe();
     }
 
@@ -1108,119 +1137,6 @@
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(d2), "Chuong");
         XLSX.writeFile(wb, `KetQua_${currentRoom}.xlsx`);
       };
-    };
-
-    let currentLockType = 'answer';
-
-    document.getElementById("btnLockAnsFor").onclick = () => openIndividualLockPopup('answer');
-    document.getElementById("btnLockBuzzFor").onclick = () => openIndividualLockPopup('buzz');
-
-    async function openIndividualLockPopup(type) {
-      currentLockType = type;
-      document.getElementById("lockPopupTitle").innerText =
-        type === 'answer' ? "Khóa đáp án đối với" : "Khóa chuông đối với";
-
-      const { data, error } = await supabase
-        .from('participants')
-        .select('name, position, created_at, is_answer_locked, is_buzz_locked')
-        .eq('room_code', currentRoom)
-        .eq('role', 'contestant')
-        .not('name', 'ilike', 'SYNC_%');
-
-      if (error) {
-        showPopup("Lỗi tải danh sách: " + error.message, "error");
-        return;
-      }
-
-      // ===== GROUP THEO NAME + LẤY BẢN GHI MỚI NHẤT =====
-      const latestByName = {};
-      (data || []).forEach(u => {
-        if (
-          !latestByName[u.name] ||
-          new Date(u.created_at) > new Date(latestByName[u.name].created_at)
-        ) {
-          latestByName[u.name] = u;
-        }
-      });
-
-      const users = Object.values(latestByName).sort((a, b) => {
-        const pA = a.position ?? 9999;
-        const pB = b.position ?? 9999;
-        if (pA !== pB) return pA - pB;
-        return a.name.localeCompare(b.name);
-      });
-
-      const listDiv = document.getElementById("lockUserList");
-      listDiv.innerHTML = "";
-
-      if (users.length === 0) {
-        listDiv.innerHTML = "<p style='text-align:center;font-weight:bold;color:gray'>Không có thí sinh</p>";
-        return;
-      }
-
-      users.forEach(u => {
-        const locked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
-
-        const row = document.createElement("div");
-        row.className = "popup-list-item";
-        row.innerHTML = `
-      <input type="checkbox" class="lock-check" data-name="${u.name}" ${locked ? "checked" : ""}>
-      <span style="font-weight:bold;color:black">
-        ${u.name} ${u.position ? `(#${u.position})` : ""}
-        ${locked ? `<span style="color:red;margin-left:6px">[Đang bị khóa]</span>` : ""}
-      </span>
-    `;
-        listDiv.appendChild(row);
-      });
-
-      document.getElementById("btnResetIndividualLock").style.background =
-        type === 'answer' ? "yellow" : "blue";
-
-      document.getElementById("btnResetIndividualLock").style.color =
-        type === 'answer' ? "black" : "white";
-
-      document.getElementById("individualLockPopup").style.display = "flex";
-    }
-
-    document.getElementById("btnSaveIndividualLock").onclick = async () => {
-      const checks = document.querySelectorAll(".lock-check");
-
-      for (const cb of checks) {
-        const name = cb.dataset.name;
-        const locked = cb.checked;
-
-        const update = currentLockType === 'answer'
-          ? { is_answer_locked: locked }
-          : { is_buzz_locked: locked };
-
-        await supabase
-          .from('participants')
-          .update(update)
-          .eq('room_code', currentRoom)
-          .eq('name', name);
-      }
-
-      showPopup("Đã lưu trạng thái khóa!");
-      document.getElementById("individualLockPopup").style.display = "none";
-    };
-
-    document.getElementById("btnResetIndividualLock").onclick = async () => {
-      const update = currentLockType === 'answer'
-        ? { is_answer_locked: false }
-        : { is_buzz_locked: false };
-
-      await supabase
-        .from('participants')
-        .update(update)
-        .eq('room_code', currentRoom)
-        .eq('role', 'contestant');
-
-      showPopup("Đã mở khóa toàn bộ!");
-      openIndividualLockPopup(currentLockType);
-    };
-
-    document.getElementById("btnCloseIndividualLock").onclick = () => {
-      document.getElementById("individualLockPopup").style.display = "none";
     };
 
     async function fetchInitialData() { await fetchRoomStatus(); await fetchAnswers(); await fetchBuzz(); await fetchUsers(); }
