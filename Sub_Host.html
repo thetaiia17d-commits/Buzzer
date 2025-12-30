@@ -1125,7 +1125,7 @@ async function openIndividualLockPopup(type) {
   // Fetch lại thật sự từ DB, KHÔNG lấy từ biến/bộ nhớ cục bộ!
   const { data: users, error } = await supabase
     .from('participants')
-    .select('name, position, is_answer_locked, is_buzz_locked')
+    .select('id, name, position, is_answer_locked, is_buzz_locked')
     .eq('room_code', currentRoom)
     .eq('role', 'contestant')
     .not('name', 'ilike', 'SYNC_%')
@@ -1145,7 +1145,7 @@ async function openIndividualLockPopup(type) {
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.className = 'lock-check';
-      cb.setAttribute('data-name', u.name);
+      cb.setAttribute('data-id', u.id);
       cb.checked = !!isLocked;
 
       const label = document.createElement('label');
@@ -1175,11 +1175,11 @@ async function openIndividualLockPopup(type) {
 
 document.getElementById("btnSaveIndividualLock").onclick = async () => {
   const checks = document.querySelectorAll(".lock-check");
-  const checkedNames = [];
-  const uncheckedNames = [];
+  const checkedIds = [];
+  const uncheckedIds = [];
   for (let cb of checks) {
-    if (cb.checked) checkedNames.push(cb.getAttribute("data-name"));
-    else uncheckedNames.push(cb.getAttribute("data-name"));
+    if (cb.checked) checkedIds.push(cb.getAttribute("data-id"));
+    else uncheckedIds.push(cb.getAttribute("data-id"));
   }
 
   const btnSave = document.getElementById("btnSaveIndividualLock");
@@ -1189,26 +1189,24 @@ document.getElementById("btnSaveIndividualLock").onclick = async () => {
 
   try {
     // Cập nhật nhóm được check: lock=true
-    if (checkedNames.length > 0) {
+    if (checkedIds.length > 0) {
       const updateObj = currentLockType === 'answer'
         ? { is_answer_locked: true }
         : { is_buzz_locked: true };
       await supabase.from('participants')
         .update(updateObj)
-        .in('name', checkedNames)
-        .eq('room_code', currentRoom)
-        .eq('role', 'contestant');
+        .in('id', checkedIds)
+        .eq('room_code', currentRoom);
     }
     // Cập nhật nhóm bị uncheck: lock=false
-    if (uncheckedNames.length > 0) {
+    if (uncheckedIds.length > 0) {
       const updateObj2 = currentLockType === 'answer'
         ? { is_answer_locked: false }
         : { is_buzz_locked: false };
       await supabase.from('participants')
         .update(updateObj2)
-        .in('name', uncheckedNames)
-        .eq('room_code', currentRoom)
-        .eq('role', 'contestant');
+        .in('id', uncheckedIds)
+        .eq('room_code', currentRoom);
     }
     showPopup("Đã cập nhật trạng thái khóa!");
     document.getElementById("individualLockPopup").style.display = "none";
