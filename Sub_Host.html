@@ -673,57 +673,58 @@
       if (!ul) return;
       ul.innerHTML = "";
 
-      // Loại bỏ trùng lặp dựa trên tên
+      // Lọc lấy danh sách user duy nhất theo tên
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => {
         if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u);
       });
       let displayUsers = Array.from(uniqueParticipantsMap.values());
 
+      // Sắp xếp danh sách
       displayUsers.sort((a, b) => {
-        // 1. Phân loại thứ tự ưu tiên Role: Host (1) -> Manager (2) -> Contestant (3) -> System (4)
+        // 1. Phân loại ưu tiên theo Role
         const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : (u.name?.startsWith("SYNC_") ? 4 : 3)));
         const pA = prio(a), pB = prio(b);
         if (pA !== pB) return pA - pB;
 
-        // 2. Logic riêng cho Contestants (Thí sinh)
+        // 2. Nếu cùng là Thí sinh (Role = 3)
         if (pA === 3) {
           const hasPosA = a.position !== null && a.position !== undefined && a.position !== "";
           const hasPosB = b.position !== null && b.position !== undefined && b.position !== "";
 
+          // Trường hợp 1: Cả hai đều có vị trí -> So sánh vị trí
           if (hasPosA && hasPosB) {
-            // Cả hai cùng có thứ tự: Sắp xếp theo số vị trí
-            if (Number(a.position) !== Number(b.position)) {
-              return Number(a.position) - Number(b.position);
-            }
-          } else if (hasPosA && !hasPosB) {
-            // Chỉ A có thứ tự: A đứng trước
-            return -1;
-          } else if (!hasPosA && hasPosB) {
-            // Chỉ B có thứ tự: B đứng trước
-            return 1;
+            return Number(a.position) - Number(b.position);
           }
-          // Nếu cả hai đều không có thứ tự hoặc trùng số thứ tự: Chạy xuống so sánh thời gian bên dưới
+          // Trường hợp 2: Chỉ A có vị trí -> A lên trước
+          if (hasPosA && !hasPosB) return -1;
+          // Trường hợp 3: Chỉ B có vị trí -> B lên trước
+          if (!hasPosA && hasPosB) return 1;
+
+          // Trường hợp 4: Cả hai không có vị trí -> So sánh thời gian vào phòng (created_at)
         }
 
-        // 3. Sắp xếp theo thứ tự vào phòng (created_at) cho những trường hợp còn lại
+        // Mặc định hoặc khi cùng nhóm không vị trí: Sắp xếp theo thời gian tham gia
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
-      // Hiển thị danh sách
+      // Render ra giao diện
       displayUsers.forEach(u => {
         const li = document.createElement("li");
-        let posDisplay = (u.role === 'contestant' && u.position != null && u.position !== "") ? `[# ${u.position}] ` : "";
+
+        // Kiểm tra xem có vị trí hợp lệ không để hiển thị [# số]
+        const hasPos = u.position !== null && u.position !== undefined && u.position !== "";
+        let posDisplay = (u.role === 'contestant' && hasPos) ? `[# ${u.position}] ` : "";
 
         if (u.role === 'host') {
           li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
         } else if (u.role === 'manager') {
-          li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
+          li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue; font-weight:bold;">(Quản lý)</span>`;
         } else if (u.name?.startsWith("SYNC_")) {
-          li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
+          li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple; font-weight:bold;">(System)</span>`;
         } else {
-          // Contestant
-          li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
+          // Thí sinh: Có hay không có position đều hiện tên, màu đỏ
+          li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red; font-weight:bold;">(Thí sinh)</span>`;
         }
         ul.appendChild(li);
       });
