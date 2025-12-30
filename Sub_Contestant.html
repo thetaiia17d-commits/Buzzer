@@ -357,7 +357,7 @@
 
         function updateAnswerUI(roomLockedState) {
             isRoomAnswerLocked = roomLockedState;
-            // Logic: Nếu PHÒNG khóa HOẶC CÁ NHÂN bị khóa -> Thí sinh bị khóa
+            // Thí sinh bị khóa nếu: (Phòng đang khóa) HOẶC (Cá nhân bị Host khóa)
             const finalLockState = isRoomAnswerLocked || individualAnswerLocked;
             lockedAnswer = finalLockState;
 
@@ -367,7 +367,12 @@
             if (finalLockState) {
                 btnSend.classList.add("locked");
                 answerInput.classList.add("input-locked");
-                answerInput.placeholder = individualAnswerLocked ? "Bạn bị khóa đáp án" : "Đang khóa...";
+                // Hiển thị lý do khóa cụ thể
+                if (individualAnswerLocked) {
+                    answerInput.placeholder = "Bạn bị khóa đáp án";
+                } else {
+                    answerInput.placeholder = "Hệ thống đang khóa...";
+                }
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
@@ -384,14 +389,17 @@
 
         function updateBuzzUI(roomLockedState) {
             isRoomBuzzLocked = roomLockedState;
+            // Thí sinh bị khóa nếu: (Phòng đang khóa) HOẶC (Cá nhân bị Host khóa) HOẶC (Đã bấm rồi)
             const finalLockState = isRoomBuzzLocked || individualBuzzLocked;
             lockedBuzz = finalLockState;
 
             if (!finalLockState && !hasBuzzed) {
                 btnBuzz.classList.remove("locked");
                 btnBuzz.innerText = "Bấm chuông";
+                btnBuzz.disabled = false;
             } else {
                 btnBuzz.classList.add("locked");
+                btnBuzz.disabled = true;
                 if (individualBuzzLocked) btnBuzz.innerText = "Bạn bị khóa chuông";
                 else if (hasBuzzed) btnBuzz.innerText = "Đã bấm chuông";
                 else btnBuzz.innerText = "Đang khóa";
@@ -585,18 +593,22 @@
                 })
                 .subscribe();
 
-            supabase.channel('my-status-' + myName)
+            // Sửa lại đoạn subscribe status cá nhân trong Sub_Contestant.html
+            supabase.channel('my-status-' + myName + '-' + myRoom) // Thêm Room vào channel name
                 .on('postgres_changes', {
                     event: 'UPDATE',
                     schema: 'public',
                     table: 'participants',
-                    filter: `name=eq.${myName}`
+                    filter: `name=eq.${myName}` // Supabase filter syntax (nếu cần có thể lọc thêm room_code ở đây)
                 }, payload => {
-                    individualAnswerLocked = payload.new.is_answer_locked;
-                    individualBuzzLocked = payload.new.is_buzz_locked;
-                    // Cập nhật ngay lập tức UI theo trạng thái phòng hiện tại
-                    updateAnswerUI(isRoomAnswerLocked);
-                    updateBuzzUI(isRoomBuzzLocked);
+                    // Chỉ nhận thay đổi nếu đúng là bản ghi của mình trong phòng này
+                    if (payload.new.room_code == myRoom) {
+                        individualAnswerLocked = payload.new.is_answer_locked;
+                        individualBuzzLocked = payload.new.is_buzz_locked;
+                        // Cập nhật UI ngay lập tức dựa trên trạng thái phòng hiện tại
+                        updateAnswerUI(isRoomAnswerLocked);
+                        updateBuzzUI(isRoomBuzzLocked);
+                    }
                 })
                 .subscribe();
             buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); buzzSound.play().catch(e => console.log("Audio play blocked")); }).subscribe();

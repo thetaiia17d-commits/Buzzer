@@ -1121,26 +1121,36 @@
       const title = type === 'answer' ? "Khóa đáp án đối với" : "Khóa chuông đối với";
       document.getElementById("lockPopupTitle").innerText = title;
 
-      // Sửa Query: Chỉ lấy contestant và sắp xếp theo position y chang danh sách tham gia
-      const { data: users } = await supabase.from('participants')
-        .select('*')
+      // Lấy dữ liệu mới nhất từ DB để đảm bảo trạng thái Checkbox chính xác
+      const { data: users, error } = await supabase.from('participants')
+        .select('name, position, is_answer_locked, is_buzz_locked')
         .eq('room_code', currentRoom)
-        .eq('role', 'contestant') // Chỉ lấy thí sinh
+        .eq('role', 'contestant')
         .not('name', 'ilike', 'SYNC_%')
-        .order('position', { ascending: true }); // Sắp xếp theo vị trí
+        .order('position', { ascending: true });
 
+      if (error) {
+        showPopup("Lỗi tải danh sách thí sinh", "error");
+        return;
+      }
 
       const listDiv = document.getElementById("lockUserList");
       listDiv.innerHTML = "";
-      if (users) {
+
+      if (users && users.length > 0) {
         users.forEach(u => {
-          const isChecked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
+          // Xác định trạng thái checked dựa trên loại đang mở (đáp án hay chuông)
+          const isLocked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
           listDiv.innerHTML += `
-            <div class="popup-list-item">
-              <input type="checkbox" class="lock-check" data-name="${u.name}" ${isChecked ? 'checked' : ''}>
-              <label style="font-weight: bold; color: black;">${u.name} ${u.position ? `(#${u.position})` : ""}</label>
-            </div>`;
+                <div class="popup-list-item">
+                    <input type="checkbox" class="lock-check" data-name="${u.name}" ${isLocked ? 'checked' : ''}>
+                    <label style="font-weight: bold; color: black;">
+                        ${u.name} ${u.position ? `(#${u.position})` : ""}
+                    </label>
+                </div>`;
         });
+      } else {
+        listDiv.innerHTML = "<p style='color:gray; text-align:center;'>Không có thí sinh nào.</p>";
       }
 
       const btnReset = document.getElementById("btnResetIndividualLock");
@@ -1152,21 +1162,39 @@
 
     document.getElementById("btnSaveIndividualLock").onclick = async () => {
       const checks = document.querySelectorAll(".lock-check");
+      const updatePromises = [];
+
+      // Hiển thị trạng thái đang xử lý
+      const btnSave = document.getElementById("btnSaveIndividualLock");
+      const originalText = btnSave.innerText;
+      btnSave.innerText = "Đang lưu...";
+      btnSave.disabled = true;
+
       for (let cb of checks) {
         const name = cb.getAttribute("data-name");
         const val = cb.checked;
         const updateObj = currentLockType === 'answer' ? { is_answer_locked: val } : { is_buzz_locked: val };
 
-        // Chỉ cập nhật cho thí sinh cụ thể trong phòng hiện tại
-        await supabase.from('participants')
-          .update(updateObj)
-          .eq('room_code', currentRoom)
-          .eq('name', name)
-          .eq('role', 'contestant');
+        updatePromises.push(
+          supabase.from('participants')
+            .update(updateObj)
+            .eq('room_code', currentRoom)
+            .eq('name', name)
+            .eq('role', 'contestant')
+        );
       }
-      showPopup("Đã cập nhật trạng thái khóa cá nhân!");
-      await fetchUsers();
-      document.getElementById("individualLockPopup").style.display = "none";
+
+      try {
+        await Promise.all(updatePromises);
+        showPopup("Đã cập nhật trạng thái khóa!");
+        await fetchUsers(); // Cập nhật lại danh sách local
+        document.getElementById("individualLockPopup").style.display = "none";
+      } catch (err) {
+        showPopup("Lỗi khi lưu!", "error");
+      } finally {
+        btnSave.innerText = originalText;
+        btnSave.disabled = false;
+      }
     };
 
     document.getElementById("btnResetIndividualLock").onclick = async () => {
