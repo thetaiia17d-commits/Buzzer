@@ -289,46 +289,6 @@
       color: black;
       font-weight: bold;
     }
-
-    .btn-lock-ans {
-      background: green;
-      color: white;
-      font-weight: bold;
-      font-size: 12px;
-      padding: 5px;
-    }
-
-    .btn-lock-buzz {
-      background: yellow;
-      color: white;
-      font-weight: bold;
-      font-size: 12px;
-      padding: 5px;
-      text-shadow: 1px 1px 1px #000;
-    }
-
-    .btn-unlock-ans {
-      background: purple;
-      color: white;
-      font-weight: bold;
-      font-size: 12px;
-      padding: 5px;
-    }
-
-    .btn-unlock-buzz {
-      background: red;
-      color: white;
-      font-weight: bold;
-      font-size: 12px;
-      padding: 5px;
-    }
-
-    .user-controls {
-      margin-top: 5px;
-      display: flex;
-      gap: 5px;
-      justify-content: flex-start;
-    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
@@ -712,70 +672,29 @@
       const ul = document.querySelector("#listPopup ul");
       if (!ul) return;
       ul.innerHTML = "";
-
       const uniqueParticipantsMap = new Map();
       allParticipants.forEach(u => { if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u); });
       let displayUsers = Array.from(uniqueParticipantsMap.values());
-
-      // Sắp xếp... (giữ nguyên logic cũ)
       displayUsers.sort((a, b) => {
         const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : (u.name?.startsWith("SYNC_") ? 4 : 3)));
         const pA = prio(a), pB = prio(b);
         if (pA !== pB) return pA - pB;
+        if (pA === 3) {
+          const posA = a.position != null ? Number(a.position) : Infinity;
+          const posB = b.position != null ? Number(b.position) : Infinity;
+          if (posA !== posB) return posA - posB;
+        }
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
-
       displayUsers.forEach(u => {
         const li = document.createElement("li");
-        li.style.borderBottom = "1px solid #ccc";
-        li.style.padding = "10px 0";
-
-        let roleInfo = "";
-        let controls = "";
-
-        if (u.role === 'host') {
-          roleInfo = `<b style="color: green;">${u.name}</b> <span style="color: green;">(Host)</span>`;
-        } else if (u.role === 'manager') {
-          roleInfo = `<b style="color: blue;">${u.name}</b> <span style="color: blue;">(Quản lý)</span>`;
-        } else if (u.name?.startsWith("SYNC_")) {
-          roleInfo = `<b style="color: purple;">${u.name}</b> <span>(System)</span>`;
-        } else {
-          // Role thí sinh
-          const ansStatus = u.is_answer_locked ? "❌" : "✅";
-          const buzzStatus = u.is_buzz_locked ? "❌" : "✅";
-
-          roleInfo = `<b style="color: red;">[#${u.position || 0}] ${u.name}</b> 
-                    <span style="font-size:12px"> (Đáp án: ${ansStatus} | Chuông: ${buzzStatus})</span>`;
-
-          // Hàng 4 nút bấm
-          controls = `
-          <div class="user-controls">
-            <button class="btn-lock-ans" onclick="updateParticipantLock('${u.name}', 'is_answer_locked', true)">Khóa đáp án</button>
-            <button class="btn-lock-buzz" onclick="updateParticipantLock('${u.name}', 'is_buzz_locked', true)">Khóa chuông</button>
-            <button class="btn-unlock-ans" onclick="updateParticipantLock('${u.name}', 'is_answer_locked', false)">Mở đáp án</button>
-            <button class="btn-unlock-buzz" onclick="updateParticipantLock('${u.name}', 'is_buzz_locked', false)">Mở chuông</button>
-          </div>
-        `;
-        }
-
-        li.innerHTML = `<div>${roleInfo}</div>${controls}`;
+        let posDisplay = (u.role === 'contestant' && u.position != null) ? `[# ${u.position}] ` : "";
+        if (u.role === 'host') li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
+        else if (u.role === 'manager') li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
+        else if (u.name?.startsWith("SYNC_")) li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
+        else li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
         ul.appendChild(li);
       });
-    }
-
-    async function updateParticipantLock(userName, field, value) {
-      const { error } = await supabase
-        .from('participants')
-        .update({ [field]: value })
-        .eq('room_code', currentRoom)
-        .eq('name', userName);
-
-      if (error) {
-        showPopup("Lỗi: " + error.message, "error");
-      } else {
-        showPopup(`Đã cập nhật cho ${userName}`);
-        // Realtime sẽ tự gọi fetchUsers() để cập nhật UI popup
-      }
     }
 
     function generateAddRows() {

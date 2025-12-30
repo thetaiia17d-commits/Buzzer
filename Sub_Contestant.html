@@ -285,8 +285,6 @@
         let lastAnswerResetAt = null;
         let lastBuzzResetAt = null;
 
-        let personalAnswerLocked = false; // Khóa từ Host
-        let personalBuzzLocked = false;   // Khóa từ Host
         let localAnswerReceiveTime = 0;
         let localBuzzReceiveTime = 0;
         let serverAnswerOpenTime = 0;
@@ -339,21 +337,15 @@
         }
 
         function updateAnswerUI(isLocked) {
-            // Thí sinh bị khóa nếu: (Room đang khóa) HOẶC (Bản thân bị Host khóa)
-            const finalLock = isLocked || personalAnswerLocked;
-
-            lockedAnswer = isLocked; // Trạng thái của Room
-            btnSend.disabled = finalLock;
-            answerInput.readOnly = finalLock;
-
-            if (finalLock) {
+            lockedAnswer = isLocked;
+            btnSend.disabled = isLocked;
+            answerInput.readOnly = isLocked;
+            if (isLocked) {
                 btnSend.classList.add("locked");
                 answerInput.classList.add("input-locked");
-                if (personalAnswerLocked) answerInput.placeholder = "Bạn bị khóa...";
             } else {
                 btnSend.classList.remove("locked");
                 answerInput.classList.remove("input-locked");
-                answerInput.placeholder = "Nhập đáp án...";
                 setTimeout(() => { answerInput.focus(); }, 10);
             }
         }
@@ -366,19 +358,14 @@
         }
 
         function updateBuzzUI(shouldLock) {
-            // Thí sinh bị khóa nếu: (Room đang khóa) HOẶC (Bản thân bị Host khóa) HOẶC (Đã bấm rồi)
-            const finalLock = shouldLock || personalBuzzLocked || hasBuzzed;
-
-            lockedBuzz = shouldLock; // Trạng thái của Room
-            if (!finalLock) {
+            lockedBuzz = shouldLock;
+            if (!shouldLock && !hasBuzzed) {
                 btnBuzz.classList.remove("locked");
                 btnBuzz.innerText = "Bấm chuông";
             } else {
                 btnBuzz.classList.add("locked");
                 if (hasBuzzed) {
                     btnBuzz.innerText = "Đã bấm chuông";
-                } else if (personalBuzzLocked) {
-                    btnBuzz.innerText = "Bị khóa";
                 } else {
                     btnBuzz.innerText = "Đang khóa";
                 }
@@ -535,83 +522,27 @@
         };
 
         function subscribeRealtime() {
-            // Xóa các channel cũ nếu đang tồn tại
             if (roomChannel) supabase.removeChannel(roomChannel);
             if (buzzesChannel) supabase.removeChannel(buzzesChannel);
-            if (userStatusChannel) supabase.removeChannel(userStatusChannel);
-
-            // 1. Channel theo dõi trạng thái Phòng (Rooms), Reset đáp án và Reset chuông
             roomChannel = supabase.channel('room-' + myRoom);
-            roomChannel
-                .on('postgres_changes', {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'rooms',
-                    filter: `room_code=eq.${myRoom}`
-                }, async (payload) => {
-                    handleRoomUpdate(payload.new);
-                })
+            roomChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${myRoom}` }, async (payload) => { handleRoomUpdate(payload.new); })
                 .on('postgres_changes', {
                     event: 'DELETE',
                     schema: 'public',
                     table: 'answers',
                     filter: `room_code=eq.${myRoom}`
                 }, () => {
+                    // Khi có bất kỳ lệnh DELETE nào từ bảng answers của phòng này
                     resetAnswerStatusBox();
                     showPopup("Host đã Reset đáp án!");
                 })
-                .on('postgres_changes', {
-                    event: 'DELETE',
-                    schema: 'public',
-                    table: 'buzzes',
-                    filter: `room_code=eq.${myRoom}`
-                }, () => {
+                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => {
                     hasBuzzed = false;
-                    buzzOrder = [];
-                    renderBuzzTable();
-                    updateBuzzUI(lockedBuzz); // Sẽ kiểm tra thêm personalBuzzLocked bên trong hàm này
+                    buzzOrder = []; renderBuzzTable(); updateBuzzUI(lockedBuzz);
                     showPopup("Host đã reset chuông!");
                 })
                 .subscribe();
-
-            // 2. Channel theo dõi danh sách Chuông (khi người khác bấm)
-            buzzesChannel = supabase.channel('buzzes-list')
-                .on('postgres_changes', {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'buzzes',
-                    filter: `room_code=eq.${myRoom}`
-                }, () => {
-                    fetchBuzzList();
-                    buzzSound.play().catch(e => console.log("Audio play blocked"));
-                })
-                .subscribe();
-
-            // 3. Channel MỚI: Theo dõi trạng thái khóa/mở riêng biệt của Thí sinh này
-            userStatusChannel = supabase.channel('user-status-' + myName)
-                .on('postgres_changes', {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'participants',
-                    filter: `name=eq.${myName}`
-                }, (payload) => {
-                    // Kiểm tra xem có đúng phòng hiện tại không
-                    if (payload.new.room_code === myRoom) {
-                        // Cập nhật trạng thái khóa cá nhân
-                        personalAnswerLocked = payload.new.is_answer_locked;
-                        personalBuzzLocked = payload.new.is_buzz_locked;
-
-                        // Cập nhật ngay lập tức UI Đáp án và Chuông
-                        // (Lưu ý: hàm updateAnswerUI và updateBuzzUI của bạn cần logic check: personal || room)
-                        updateAnswerUI(lockedAnswer);
-                        updateBuzzUI(lockedBuzz);
-
-                        // Thông báo nhanh cho thí sinh biết
-                        if (personalAnswerLocked) showPopup("Bạn bị KHÓA quyền nhập đáp án!", "error");
-                        if (personalBuzzLocked) showPopup("Bạn bị KHÓA quyền bấm chuông!", "error");
-                    }
-                })
-                .subscribe();
+            buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); buzzSound.play().catch(e => console.log("Audio play blocked"));}).subscribe();
         }
 
         async function handleRoomUpdate(roomData) {
