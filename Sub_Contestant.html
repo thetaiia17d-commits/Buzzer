@@ -507,6 +507,8 @@
             if (mySelf) {
                 individualAnswerLocked = mySelf.is_answer_locked;
                 individualBuzzLocked = mySelf.is_buzz_locked;
+                updateAnswerUI(isRoomAnswerLocked);
+                updateBuzzUI(isRoomBuzzLocked);
             }
 
             myRoom = code; myName = name;

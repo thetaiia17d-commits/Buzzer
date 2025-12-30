@@ -1165,6 +1165,7 @@
           .eq('role', 'contestant');
       }
       showPopup("Đã cập nhật trạng thái khóa cá nhân!");
+      await fetchUsers();
       document.getElementById("individualLockPopup").style.display = "none";
     };
 
