@@ -1113,7 +1113,7 @@
 
     // ========== FIX FOR INDIVIDUAL LOCK POPUP ==========
     // Ensure persistent lock state for contestants and apply when host opens room.
-    let currentLockType = 'answer'; // 'answer' hoặc 'buzz'
+    let currentLockType = 'answer';
 
     document.getElementById("btnLockAnsFor").onclick = () => openIndividualLockPopup('answer');
     document.getElementById("btnLockBuzzFor").onclick = () => openIndividualLockPopup('buzz');
@@ -1123,7 +1123,6 @@
       const title = type === 'answer' ? "Khóa đáp án đối với" : "Khóa chuông đối với";
       document.getElementById("lockPopupTitle").innerText = title;
 
-      // Lấy dữ liệu mới nhất từ DB để đảm bảo trạng thái Checkbox chính xác
       const { data: users, error } = await supabase.from('participants')
         .select('name, position, is_answer_locked, is_buzz_locked')
         .eq('room_code', currentRoom)
@@ -1138,19 +1137,18 @@
 
       const listDiv = document.getElementById("lockUserList");
       listDiv.innerHTML = "";
-
       if (users && users.length > 0) {
         users.forEach(u => {
-          // Xác định trạng thái checked dựa trên loại đang mở (đáp án hay chuông)
           const isLocked = type === 'answer' ? u.is_answer_locked : u.is_buzz_locked;
           const div = document.createElement('div');
           div.className = 'popup-list-item';
           div.innerHTML = `
-              <input type="checkbox" class="lock-check" data-name="${u.name}" ${isLocked ? 'checked' : ''}>
-              <label style="font-weight: bold; color: black;">
-                  ${u.name} ${u.position ? `(#${u.position})` : ""}
-              </label>
-          `;
+        <input type="checkbox" class="lock-check" data-name="${u.name}" ${isLocked ? 'checked' : ''}>
+        <label style="font-weight:bold; color: black;">
+          ${u.name} ${u.position ? `(#${u.position})` : ""}
+          ${isLocked ? '<span style="color:red; margin-left:6px;">[Đang bị khóa]</span>' : ''}
+        </label>
+      `;
           listDiv.appendChild(div);
         });
       } else {
@@ -1164,42 +1162,39 @@
       document.getElementById("individualLockPopup").style.display = "flex";
     }
 
+    // Lưu trạng thái khóa cá nhân khi người dùng bấm Lưu
     document.getElementById("btnSaveIndividualLock").onclick = async () => {
       const checks = Array.from(document.querySelectorAll(".lock-check"));
       const checkedNames = checks.filter(cb => cb.checked).map(cb => cb.getAttribute('data-name'));
       const uncheckedNames = checks.filter(cb => !cb.checked).map(cb => cb.getAttribute('data-name'));
 
-      // Hiển thị trạng thái đang xử lý
+      // Update đồng thời
       const btnSave = document.getElementById("btnSaveIndividualLock");
       const originalText = btnSave.innerText;
       btnSave.innerText = "Đang lưu...";
       btnSave.disabled = true;
 
       try {
-        // Cập nhật những người được check => locked = true
+        // Đặt lock = true cho các checkboxes được chọn
         if (checkedNames.length > 0) {
           const updateObj = currentLockType === 'answer' ? { is_answer_locked: true } : { is_buzz_locked: true };
-          const { error: err1 } = await supabase.from('participants')
+          await supabase.from('participants')
             .update(updateObj)
             .in('name', checkedNames)
             .eq('room_code', currentRoom)
             .eq('role', 'contestant');
-          if (err1) throw err1;
         }
-
-        // Cập nhật những người không được check => locked = false
+        // Đặt lock = false cho các checkboxes không được chọn
         if (uncheckedNames.length > 0) {
           const updateObj2 = currentLockType === 'answer' ? { is_answer_locked: false } : { is_buzz_locked: false };
-          const { error: err2 } = await supabase.from('participants')
+          await supabase.from('participants')
             .update(updateObj2)
             .in('name', uncheckedNames)
             .eq('room_code', currentRoom)
             .eq('role', 'contestant');
-          if (err2) throw err2;
         }
-
         showPopup("Đã cập nhật trạng thái khóa!");
-        await fetchUsers(); // Cập nhật lại danh sách local
+        await fetchUsers();
         document.getElementById("individualLockPopup").style.display = "none";
       } catch (err) {
         showPopup("Lỗi khi lưu: " + (err.message || err), "error");
@@ -1209,22 +1204,21 @@
       }
     };
 
+    // Mở khóa toàn bộ
     document.getElementById("btnResetIndividualLock").onclick = async () => {
       const updateObj = currentLockType === 'answer' ? { is_answer_locked: false } : { is_buzz_locked: false };
-      const { error } = await supabase.from('participants').update(updateObj).eq('room_code', currentRoom).eq('role', 'contestant');
-      if (error) showPopup("Lỗi reset: " + error.message, "error");
-      else {
-        showPopup("Đã mở khóa cho tất cả!");
-        document.getElementById("individualLockPopup").style.display = "none";
-        await fetchUsers();
-      }
+      await supabase.from('participants')
+        .update(updateObj)
+        .eq('room_code', currentRoom)
+        .eq('role', 'contestant');
+      showPopup("Đã mở khóa cho tất cả!");
+      document.getElementById("individualLockPopup").style.display = "none";
+      await fetchUsers();
     };
 
     document.getElementById("btnCloseIndividualLock").onclick = () => {
       document.getElementById("individualLockPopup").style.display = "none";
     };
-
-    // ========== END FIX ==========
 
     async function fetchInitialData() { await fetchRoomStatus(); await fetchAnswers(); await fetchBuzz(); await fetchUsers(); }
     window.addEventListener("beforeunload", () => { if (currentRoom) supabase.from("participants").delete().eq("room_code", currentRoom).eq("name", myName); });
