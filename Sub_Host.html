@@ -1123,13 +1123,34 @@ async function openIndividualLockPopup(type) {
   document.getElementById("lockPopupTitle").innerText = title;
 
   // Fetch lại thật sự từ DB, KHÔNG lấy từ biến/bộ nhớ cục bộ!
-  const { data: users, error } = await supabase
+  const { data: usersRaw, error } = await supabase
     .from('participants')
-    .select('id, name, position, is_answer_locked, is_buzz_locked')
+    .select('id, name, position, created_at, is_answer_locked, is_buzz_locked')
     .eq('room_code', currentRoom)
     .eq('role', 'contestant')
     .not('name', 'ilike', 'SYNC_%')
-    .order('position', { ascending: true });
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error("Lỗi fetch participants:", error);
+    showPopup("Không tải được danh sách thí sinh: " + error.message, "error");
+    return;
+  }
+
+  // IMPORTANT: Có thể có nhiều bản ghi trùng 'name' (re-join).
+  // Ta hiển thị theo NAME (mỗi người 1 dòng) và khi lưu sẽ update theo NAME để không bị "mở lại là mất".
+  const usersByName = new Map();
+  (usersRaw || []).forEach(u => {
+    if (!usersByName.has(u.name)) usersByName.set(u.name, u); // vì đã order created_at desc
+  });
+
+  const users = Array.from(usersByName.values()).sort((a, b) => {
+    const posA = a.position != null ? Number(a.position) : Infinity;
+    const posB = b.position != null ? Number(b.position) : Infinity;
+    if (posA !== posB) return posA - posB;
+    return (a.name || '').localeCompare(b.name || '');
+  });
 
   const listDiv = document.getElementById("lockUserList");
   listDiv.innerHTML = "";
@@ -1145,7 +1166,7 @@ async function openIndividualLockPopup(type) {
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.className = 'lock-check';
-      cb.setAttribute('data-id', u.id);
+      cb.setAttribute('data-name', u.name);
       cb.checked = !!isLocked;
 
       const label = document.createElement('label');
@@ -1175,32 +1196,37 @@ async function openIndividualLockPopup(type) {
 
 document.getElementById("btnSaveIndividualLock").onclick = async () => {
   const checks = document.querySelectorAll(".lock-check");
-  
+
   const btnSave = document.getElementById("btnSaveIndividualLock");
   const originalText = btnSave.innerText;
   btnSave.innerText = "Đang lưu...";
   btnSave.disabled = true;
 
   try {
-    // Cập nhật từng checkbox một để đảm bảo trạng thái được lưu chính xác
     for (let cb of checks) {
-      const participantId = cb.getAttribute("data-id");
+      const name = cb.getAttribute("data-name");
       const isChecked = cb.checked;
-      
+
       const updateObj = currentLockType === 'answer'
         ? { is_answer_locked: isChecked }
         : { is_buzz_locked: isChecked };
-      
-      const { error } = await supabase.from('participants')
+
+      // Update theo NAME để cover trường hợp có nhiều bản ghi trùng tên
+      const { error } = await supabase
+        .from('participants')
         .update(updateObj)
-        .eq('id', participantId)
-        .eq('room_code', currentRoom);
-      
+        .eq('room_code', currentRoom)
+        .eq('role', 'contestant')
+        .eq('name', name);
+
       if (error) {
-        console.error("Lỗi cập nhật participant:", participantId, error);
+        console.error("Lỗi cập nhật participant (name):", name, error);
+        showPopup("Lỗi lưu cho '" + name + "': " + error.message, "error");
+        // dừng luôn để user biết lỗi thay vì báo thành công
+        return;
       }
     }
-    
+
     showPopup("Đã cập nhật trạng thái khóa!");
     document.getElementById("individualLockPopup").style.display = "none";
     await fetchUsers();
