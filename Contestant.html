@@ -314,10 +314,8 @@
             const { data: room } = await supabase.from('rooms').select('*').eq('room_code', parseInt(code)).maybeSingle();
             if (!room) return showPopup("Phòng không tồn tại", true);
 
-            const { data: existing } = await supabase.from('participants').select('id').eq('room_code', parseInt(code)).eq('name', name).maybeSingle();
-            if (existing) return showPopup("Tên đã bị trùng", true);
-
-            await supabase.from('participants').insert([{ room_code: parseInt(code), name, role: 'contestant', position: pos }]);
+            const posValue = pos === "" ? null : parseInt(pos);
+            await supabase.from('participants').insert([{ room_code: parseInt(code), name, role: 'contestant', position: posValue }]);
             
             myRoom = parseInt(code);
             myName = name;
