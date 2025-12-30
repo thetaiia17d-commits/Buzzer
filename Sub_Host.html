@@ -672,27 +672,59 @@
       const ul = document.querySelector("#listPopup ul");
       if (!ul) return;
       ul.innerHTML = "";
+
+      // Loại bỏ trùng lặp dựa trên tên
       const uniqueParticipantsMap = new Map();
-      allParticipants.forEach(u => { if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u); });
+      allParticipants.forEach(u => {
+        if (!uniqueParticipantsMap.has(u.name)) uniqueParticipantsMap.set(u.name, u);
+      });
       let displayUsers = Array.from(uniqueParticipantsMap.values());
+
       displayUsers.sort((a, b) => {
+        // 1. Phân loại thứ tự ưu tiên Role: Host (1) -> Manager (2) -> Contestant (3) -> System (4)
         const prio = u => (u.role === 'host' ? 1 : (u.role === 'manager' ? 2 : (u.name?.startsWith("SYNC_") ? 4 : 3)));
         const pA = prio(a), pB = prio(b);
         if (pA !== pB) return pA - pB;
+
+        // 2. Logic riêng cho Contestants (Thí sinh)
         if (pA === 3) {
-          const posA = a.position != null ? Number(a.position) : Infinity;
-          const posB = b.position != null ? Number(b.position) : Infinity;
-          if (posA !== posB) return posA - posB;
+          const hasPosA = a.position !== null && a.position !== undefined && a.position !== "";
+          const hasPosB = b.position !== null && b.position !== undefined && b.position !== "";
+
+          if (hasPosA && hasPosB) {
+            // Cả hai cùng có thứ tự: Sắp xếp theo số vị trí
+            if (Number(a.position) !== Number(b.position)) {
+              return Number(a.position) - Number(b.position);
+            }
+          } else if (hasPosA && !hasPosB) {
+            // Chỉ A có thứ tự: A đứng trước
+            return -1;
+          } else if (!hasPosA && hasPosB) {
+            // Chỉ B có thứ tự: B đứng trước
+            return 1;
+          }
+          // Nếu cả hai đều không có thứ tự hoặc trùng số thứ tự: Chạy xuống so sánh thời gian bên dưới
         }
+
+        // 3. Sắp xếp theo thứ tự vào phòng (created_at) cho những trường hợp còn lại
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
+
+      // Hiển thị danh sách
       displayUsers.forEach(u => {
         const li = document.createElement("li");
-        let posDisplay = (u.role === 'contestant' && u.position != null) ? `[# ${u.position}] ` : "";
-        if (u.role === 'host') li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
-        else if (u.role === 'manager') li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
-        else if (u.name?.startsWith("SYNC_")) li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
-        else li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
+        let posDisplay = (u.role === 'contestant' && u.position != null && u.position !== "") ? `[# ${u.position}] ` : "";
+
+        if (u.role === 'host') {
+          li.innerHTML = `<b style="color: green;">${u.name}</b> <span style="color: green; font-weight:bold;">(Host)</span>`;
+        } else if (u.role === 'manager') {
+          li.innerHTML = `<b style="color: blue;">${u.name}</b> <span style="color: blue;font-weight:bold;">(Quản lý)</span>`;
+        } else if (u.name?.startsWith("SYNC_")) {
+          li.innerHTML = `<b style="color: purple;">${u.name}</b> <span style="color: purple;font-weight:bold;">(System)</span>`;
+        } else {
+          // Contestant
+          li.innerHTML = `<b style="color: red;">${posDisplay}${u.name}</b> <span style="color: red;font-weight:bold;">(Thí sinh)</span>`;
+        }
         ul.appendChild(li);
       });
     }
