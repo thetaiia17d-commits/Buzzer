@@ -69,7 +69,8 @@
         }
 
         #gameArea {
-            display: none; /* Ẩn ban đầu, hiện khi vào phòng */
+            display: none;
+            /* Ẩn ban đầu, hiện khi vào phòng */
             flex-direction: column;
             align-items: center;
             margin-top: 20px;
@@ -97,18 +98,19 @@
             max-width: 1000px;
             margin-top: 10px;
             border-radius: 6px;
-            display: block; /* Đảm bảo nút chiếm dòng riêng */
+            display: block;
+            /* Đảm bảo nút chiếm dòng riêng */
         }
 
         #btnSend {
-            height: 100px;
+            height: 70px;
             font-size: 25px;
             background: yellow;
             color: black;
         }
 
         #btnBuzz {
-            height: 100px;
+            height: 70px;
             font-size: 25px;
             background: blue;
             color: white;
@@ -116,7 +118,7 @@
 
         /* Nút rời khỏi phòng - Sửa lại CSS */
         #btnLeave {
-            height: 60px;
+            height: 70px;
             font-size: 20px;
             background: green !important;
             color: white !important;
@@ -197,14 +199,17 @@
         <div class="login-controls">
             <input id="roomCode" placeholder="Mã phòng">
             <input id="name" placeholder="Tên của bạn">
-            <input id="positionInput" type="number" placeholder="Vị trí (Optional)" min="1" max="100" style="width: 150px;">
+            <input id="positionInput" type="number" placeholder="Vị trí (Optional)" min="1" max="100"
+                style="width: 150px;">
             <button id="btnJoin">Xác nhận</button>
         </div>
     </div>
 
     <div id="gameArea">
-        <div class="timer-info">Thời gian gửi đáp án: <span id="answerCountdown" class="timer-countdown">--.--s</span></div>
-        <div class="timer-info">Thời gian bấm chuông: <span id="buzzCountdown" class="timer-countdown">--.--s</span></div>
+        <div class="timer-info">Thời gian gửi đáp án: <span id="answerCountdown" class="timer-countdown">--.--s</span>
+        </div>
+        <div class="timer-info">Thời gian bấm chuông: <span id="buzzCountdown" class="timer-countdown">--.--s</span>
+        </div>
 
         <div id="lastAnswerStatus" class="last-answer-box"></div>
 
@@ -336,7 +341,7 @@
 
             const posValue = pos === "" ? null : parseInt(pos);
             await supabase.from('participants').insert([{ room_code: parseInt(code), name, role: 'contestant', position: posValue }]);
-            
+
             myRoom = parseInt(code);
             myName = name;
             gameArea.style.display = "flex";
@@ -381,7 +386,7 @@
             if (myRoom && myName) {
                 await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
             }
-            
+
             // Hủy đăng ký kênh realtime
             if (roomChannel) {
                 supabase.removeChannel(roomChannel);
@@ -397,7 +402,7 @@
             answerInput.value = "";
             document.getElementById('answerCountdown').innerText = "--.--s";
             document.getElementById('buzzCountdown').innerText = "--.--s";
-            
+
             showPopup("Đã rời phòng!");
         };
 
@@ -443,6 +448,11 @@
                 }
             } else {
                 updateAnswerUI(true);
+                if (answerInterval) {
+                    clearInterval(answerInterval);
+                    answerInterval = null;
+                }
+                currentAnswerStartTime = 0;
                 document.getElementById('answerCountdown').innerText = "--.--s";
             }
 
@@ -458,6 +468,11 @@
                 }
             } else {
                 updateBuzzUI(true);
+                if (buzzInterval) {
+                    clearInterval(buzzInterval);
+                    buzzInterval = null;
+                }
+                currentBuzzStartTime = 0;
                 document.getElementById('buzzCountdown').innerText = "--.--s";
             }
         }
@@ -478,7 +493,7 @@
                 await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
             }
         });
-        
+
         document.addEventListener("contextmenu", (e) => e.preventDefault());
     </script>
 </body>
