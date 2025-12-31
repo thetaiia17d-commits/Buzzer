@@ -488,7 +488,7 @@
 
             const posValue = posInput === "" ? null : parseInt(posInput);
 
-            const { error: joinError } = await supabase.from('participants').insert([{
+            const { error: joinError } = await supabase.from('participants').upsert([{
                 room_code: code,
                 name: name,
                 role: 'contestant',

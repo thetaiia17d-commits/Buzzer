@@ -340,7 +340,7 @@
             if (!room) return showPopup("Phòng không tồn tại", true);
 
             const posValue = pos === "" ? null : parseInt(pos);
-            await supabase.from('participants').insert([{ room_code: parseInt(code), name, role: 'contestant', position: posValue }]);
+            await supabase.from('participants').upsert([{ room_code: parseInt(code), name, role: 'contestant', position: posValue }]);
 
             myRoom = parseInt(code);
             myName = name;
