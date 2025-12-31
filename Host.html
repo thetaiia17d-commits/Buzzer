@@ -963,12 +963,50 @@
         .on(
           'postgres_changes',
           {
-            event: '*',
+            event: 'INSERT', // Khi có người mới vào
             schema: 'public',
             table: 'participants',
             filter: `room_code=eq.${currentRoom}`
           },
-          fetchUsers
+          payload => {
+            // Kiểm tra xem đã có trong danh sách chưa (tránh trùng)
+            const exists = allParticipants.some(p => p.id === payload.new.id);
+            if (!exists) {
+              allParticipants.push(payload.new);
+              renderUserListPopup();
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE', // Khi có người rời phòng (dòng bị xóa)
+            schema: 'public',
+            table: 'participants'
+            // Lưu ý: Filter delete thường dựa trên cấu hình replica identity, 
+            // ở đây ta xử lý lọc ID trong mảng local
+          },
+          payload => {
+            // Xóa user khỏi mảng local ngay lập tức dựa trên ID bị xóa
+            allParticipants = allParticipants.filter(u => u.id !== payload.old.id);
+            renderUserListPopup();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE', // Khi có cập nhật (ví dụ: đổi vị trí)
+            schema: 'public',
+            table: 'participants',
+            filter: `room_code=eq.${currentRoom}`
+          },
+          payload => {
+            const index = allParticipants.findIndex(p => p.id === payload.new.id);
+            if (index !== -1) {
+              allParticipants[index] = payload.new;
+              renderUserListPopup();
+            }
+          }
         )
         .subscribe();
     }

@@ -139,6 +139,26 @@
             transform: translateY(4px);
         }
 
+        /* NÚT RỜI PHÒNG MỚI */
+        #btnLeave {
+            width: 95% !important;
+            height: 50px;
+            background: green;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 15px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            box-shadow: 0 4px #1e7e34;
+            box-sizing: border-box;
+        }
+
+        #btnLeave:hover {
+            background-color: orange;
+        }
+
         .locked {
             background: #555 !important;
             color: #ccc !important;
@@ -248,6 +268,8 @@
         </div>
 
         <button id="btnBuzz">Bấm chuông</button>
+        
+        <button id="btnLeave">Rời khỏi phòng</button>
 
         <h3>Thứ tự bấm chuông</h3>
         <table id="tblBuzz">
@@ -296,6 +318,7 @@
         const nameInput = document.getElementById("name");
         const btnJoin = document.getElementById("btnJoin");
         const btnSend = document.getElementById("btnSend");
+        const btnLeave = document.getElementById("btnLeave");
         const answerInput = document.getElementById("answer");
         const answerStatusBox = document.getElementById("answerStatusBox");
         const btnBuzz = document.getElementById("btnBuzz");
@@ -452,7 +475,7 @@
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
             const name = nameInput.value.trim();
-            const posInput = document.getElementById("positionInput").value.trim(); //
+            const posInput = document.getElementById("positionInput").value.trim(); 
 
             if (!codeString || !name || codeString.length !== 6) {
                 return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
@@ -460,14 +483,11 @@
 
             const code = parseInt(codeString);
 
-            // Kiểm tra phòng tồn tại
             const { data: room, error: roomError } = await supabase.from('rooms').select('*').eq('room_code', code).maybeSingle();
             if (roomError || !room) return showPopup("Phòng không tồn tại!", "error");
 
-            // XỬ LÝ LỖI: Chuyển vị trí thành số hoặc null nếu để trống để DB không bị lỗi kiểu dữ liệu
             const posValue = posInput === "" ? null : parseInt(posInput);
 
-            // Thực hiện thêm thí sinh và CHỈ chuyển trang nếu thành công
             const { error: joinError } = await supabase.from('participants').insert([{
                 room_code: code,
                 name: name,
@@ -475,7 +495,8 @@
                 position: posValue
             }]);
 
-            // Nếu thành công mới thực hiện các lệnh dưới đây
+            if (joinError) return showPopup("Lỗi tham gia: " + joinError.message, "error");
+
             myRoom = code;
             myName = name;
             loginArea.style.display = "none";
@@ -487,6 +508,33 @@
             await fetchBuzzList();
             handleRoomUpdate(room);
             subscribeRealtime();
+        };
+
+        // CHỨC NĂNG RỜI PHÒNG
+        btnLeave.onclick = async () => {
+            if (confirm("Bạn có chắc chắn muốn rời khỏi phòng?")) {
+                if (myRoom && myName) {
+                    await supabase.from("participants")
+                        .delete()
+                        .eq("room_code", myRoom)
+                        .eq("name", myName);
+                }
+                
+                // Ngắt kết nối realtime
+                if (roomChannel) supabase.removeChannel(roomChannel);
+                if (buzzesChannel) supabase.removeChannel(buzzesChannel);
+
+                // Reset trạng thái
+                myRoom = "";
+                myName = "";
+                hasBuzzed = false;
+                buzzOrder = [];
+                
+                // Quay lại màn hình login
+                gameArea.style.display = "none";
+                loginArea.style.display = "flex";
+                showPopup("Đã rời khỏi phòng!");
+            }
         };
 
         btnSend.onclick = async () => {
@@ -548,7 +596,6 @@
                     table: 'answers',
                     filter: `room_code=eq.${myRoom}`
                 }, () => {
-                    // Khi có bất kỳ lệnh DELETE nào từ bảng answers của phòng này
                     resetAnswerStatusBox();
                     showPopup("Host đã Reset đáp án!");
                 })
@@ -564,35 +611,22 @@
         async function handleRoomUpdate(roomData) {
             if (!roomData) return;
 
-            /* ===================== RESET ĐÁP ÁN ===================== */
             if (roomData.answer_reset_at &&
                 roomData.answer_reset_at !== lastAnswerResetAt) {
-
                 lastAnswerResetAt = roomData.answer_reset_at;
-
-                // Xóa chữ ô cam, GIỮ ô
                 resetAnswerStatusBox();
-
-                // Xóa bảng đáp án local (nếu có)
-                myLastAnswer = null;
-
                 showPopup("Đáp án đã được Reset!");
             }
 
-            /* ===================== RESET CHUÔNG ===================== */
             if (roomData.buzz_reset_at &&
                 roomData.buzz_reset_at !== lastBuzzResetAt) {
-
                 lastBuzzResetAt = roomData.buzz_reset_at;
-
                 hasBuzzed = false;
                 buzzOrder = [];
                 renderBuzzTable();
-
                 showPopup("Chuông đã được Reset!");
             }
 
-            /* ===================== ĐÁP ÁN ===================== */
             const isAnswerOpen = (roomData.answer_status === 'open');
             const answerOpenTimeISO = roomData.answer_open_time;
             const newAnswerStartTime = answerOpenTimeISO ? new Date(answerOpenTimeISO).getTime() : 0;
@@ -618,7 +652,6 @@
                 document.getElementById('answerCountdown').innerText = "--.--s";
             }
 
-            /* ===================== CHUÔNG ===================== */
             const isBuzzOpen = (roomData.buzz_status === 'open');
             const buzzOpenTimeISO = roomData.buzz_open_time;
             const newBuzzStartTime = buzzOpenTimeISO ? new Date(buzzOpenTimeISO).getTime() : 0;

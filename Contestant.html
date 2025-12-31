@@ -92,22 +92,39 @@
         }
 
         #btnSend,
-        #btnBuzz {
+        #btnBuzz,
+        #btnLeave {
             width: 80%;
             max-width: 1000px;
-            height: 100px;
             margin-top: 5px;
-            font-size: 25px;
+            border-radius: 6px;
         }
 
         #btnSend {
+            height: 100px;
+            font-size: 25px;
             background: yellow;
             color: black;
         }
 
         #btnBuzz {
+            height: 100px;
+            font-size: 25px;
             background: blue;
             color: white;
+        }
+
+        /* Nút rời khỏi phòng */
+        #btnLeave {
+            height: 60px;
+            font-size: 20px;
+            background: green;
+            color: white;
+            margin-top: 20px;
+        }
+
+        #btnLeave:hover {
+            background: orange;
         }
 
         .locked {
@@ -193,6 +210,7 @@
         <textarea id="answer" placeholder="Nhập đáp án..."></textarea>
         <button id="btnSend">Gửi đáp án</button>
         <button id="btnBuzz">Bấm chuông</button>
+        <button id="btnLeave">Rời khỏi phòng</button>
     </div>
 
     <div id="popupMessage"></div>
@@ -226,6 +244,7 @@
         const answerInput = document.getElementById("answer");
         const btnSend = document.getElementById("btnSend");
         const btnBuzz = document.getElementById("btnBuzz");
+        const btnLeave = document.getElementById("btnLeave");
         const buzzSound = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
 
         function showPopup(msg, isError = false) {
@@ -320,6 +339,7 @@
             myRoom = parseInt(code);
             myName = name;
             gameArea.style.display = "flex";
+            loginArea.style.display = "none"; // Ẩn login khi vào game
 
             await syncServerTime();
             handleRoomUpdate(room);
@@ -353,6 +373,33 @@
             const finalISO = new Date(serverBuzzOpenTime + elapsed).toISOString();
 
             await supabase.from('buzzes').insert([{ room_code: myRoom, name: myName, created_at: finalISO }]);
+        };
+
+        // Hàm xử lý khi nhấn Rời khỏi phòng
+        btnLeave.onclick = async () => {
+            if (confirm("Bạn có chắc chắn muốn rời khỏi phòng?")) {
+                if (myRoom && myName) {
+                    await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
+                }
+                
+                // Hủy đăng ký kênh realtime
+                if (roomChannel) {
+                    supabase.removeChannel(roomChannel);
+                    roomChannel = null;
+                }
+
+                // Reset trạng thái và UI
+                myRoom = "";
+                myName = "";
+                gameArea.style.display = "none";
+                loginArea.style.display = "flex";
+                lastAnswerStatus.innerText = "";
+                answerInput.value = "";
+                document.getElementById('answerCountdown').innerText = "--.--s";
+                document.getElementById('buzzCountdown').innerText = "--.--s";
+                
+                showPopup("Đã rời phòng!");
+            }
         };
 
         function subscribeRealtime() {
