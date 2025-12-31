@@ -139,7 +139,7 @@
             transform: translateY(4px);
         }
 
-        /* NÚT RỜI PHÒNG MỚI */
+        /* NÚT RỜI PHÒNG (Màu green, chữ đậm trắng) */
         #btnLeave {
             width: 95% !important;
             height: 50px;
@@ -156,7 +156,12 @@
         }
 
         #btnLeave:hover {
-            background-color: orange;
+            background-color: #218838;
+        }
+
+        #btnLeave:active {
+            box-shadow: 0 2px #1e7e34;
+            transform: translateY(2px);
         }
 
         .locked {
@@ -510,31 +515,32 @@
             subscribeRealtime();
         };
 
-        // CHỨC NĂNG RỜI PHÒNG
+        // CHỨC NĂNG RỜI PHÒNG (Đã bỏ confirm)
         btnLeave.onclick = async () => {
-            if (confirm("Bạn có chắc chắn muốn rời khỏi phòng?")) {
-                if (myRoom && myName) {
-                    await supabase.from("participants")
-                        .delete()
-                        .eq("room_code", myRoom)
-                        .eq("name", myName);
-                }
-                
-                // Ngắt kết nối realtime
-                if (roomChannel) supabase.removeChannel(roomChannel);
-                if (buzzesChannel) supabase.removeChannel(buzzesChannel);
-
-                // Reset trạng thái
-                myRoom = "";
-                myName = "";
-                hasBuzzed = false;
-                buzzOrder = [];
-                
-                // Quay lại màn hình login
-                gameArea.style.display = "none";
-                loginArea.style.display = "flex";
-                showPopup("Đã rời khỏi phòng!");
+            if (myRoom && myName) {
+                // Xóa khỏi danh sách tham gia
+                await supabase.from("participants")
+                    .delete()
+                    .eq("room_code", myRoom)
+                    .eq("name", myName);
             }
+            
+            // Ngắt các kết nối Realtime hiện tại
+            if (roomChannel) supabase.removeChannel(roomChannel);
+            if (buzzesChannel) supabase.removeChannel(buzzesChannel);
+
+            // Xóa sạch trạng thái cục bộ
+            myRoom = "";
+            myName = "";
+            hasBuzzed = false;
+            buzzOrder = [];
+            
+            // Quay về màn hình đăng nhập
+            gameArea.style.display = "none";
+            loginArea.style.display = "flex";
+            
+            // Hiển thị thông báo nhẹ nhàng
+            showPopup("Đã rời khỏi phòng!");
         };
 
         btnSend.onclick = async () => {

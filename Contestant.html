@@ -15,14 +15,13 @@
             margin: 0;
         }
 
-        /* Container bọc 4 phần tử để dàn hàng ngang */
         .login-controls {
             display: flex;
             flex-direction: row;
             justify-content: center;
             align-items: center;
-            gap: 5px; /* Khoảng cách giữa các ô */
-            flex-wrap: wrap; /* Tự động xuống dòng nếu màn hình quá hẹp */
+            gap: 5px;
+            flex-wrap: wrap;
         }
 
         input,
@@ -70,7 +69,7 @@
         }
 
         #gameArea {
-            display: none;
+            display: none; /* Ẩn ban đầu, hiện khi vào phòng */
             flex-direction: column;
             align-items: center;
             margin-top: 20px;
@@ -82,7 +81,7 @@
             color: white;
             font-weight: bold;
             height: 40px;
-            padding: 0 20px; /* Điều chỉnh lại padding cho cân đối hàng ngang */
+            padding: 0 20px;
             font-size: 16px;
             margin: 5px;
         }
@@ -96,8 +95,9 @@
         #btnLeave {
             width: 80%;
             max-width: 1000px;
-            margin-top: 5px;
+            margin-top: 10px;
             border-radius: 6px;
+            display: block; /* Đảm bảo nút chiếm dòng riêng */
         }
 
         #btnSend {
@@ -114,17 +114,18 @@
             color: white;
         }
 
-        /* Nút rời khỏi phòng */
+        /* Nút rời khỏi phòng - Sửa lại CSS */
         #btnLeave {
             height: 60px;
             font-size: 20px;
-            background: green;
-            color: white;
+            background: green !important;
+            color: white !important;
+            font-weight: bold !important;
             margin-top: 20px;
         }
 
         #btnLeave:hover {
-            background: orange;
+            background: #006400 !important; /* Xanh lá đậm khi hover */
         }
 
         .locked {
@@ -339,7 +340,7 @@
             myRoom = parseInt(code);
             myName = name;
             gameArea.style.display = "flex";
-            loginArea.style.display = "none"; // Ẩn login khi vào game
+            loginArea.style.display = "none";
 
             await syncServerTime();
             handleRoomUpdate(room);
@@ -375,31 +376,29 @@
             await supabase.from('buzzes').insert([{ room_code: myRoom, name: myName, created_at: finalISO }]);
         };
 
-        // Hàm xử lý khi nhấn Rời khỏi phòng
+        // Hàm xử lý khi nhấn Rời khỏi phòng (Đã bỏ confirm)
         btnLeave.onclick = async () => {
-            if (confirm("Bạn có chắc chắn muốn rời khỏi phòng?")) {
-                if (myRoom && myName) {
-                    await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
-                }
-                
-                // Hủy đăng ký kênh realtime
-                if (roomChannel) {
-                    supabase.removeChannel(roomChannel);
-                    roomChannel = null;
-                }
-
-                // Reset trạng thái và UI
-                myRoom = "";
-                myName = "";
-                gameArea.style.display = "none";
-                loginArea.style.display = "flex";
-                lastAnswerStatus.innerText = "";
-                answerInput.value = "";
-                document.getElementById('answerCountdown').innerText = "--.--s";
-                document.getElementById('buzzCountdown').innerText = "--.--s";
-                
-                showPopup("Đã rời phòng!");
+            if (myRoom && myName) {
+                await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
             }
+            
+            // Hủy đăng ký kênh realtime
+            if (roomChannel) {
+                supabase.removeChannel(roomChannel);
+                roomChannel = null;
+            }
+
+            // Reset trạng thái và UI về màn hình đăng nhập ngay lập tức
+            myRoom = "";
+            myName = "";
+            gameArea.style.display = "none";
+            loginArea.style.display = "flex";
+            lastAnswerStatus.innerText = "";
+            answerInput.value = "";
+            document.getElementById('answerCountdown').innerText = "--.--s";
+            document.getElementById('buzzCountdown').innerText = "--.--s";
+            
+            showPopup("Đã rời phòng!");
         };
 
         function subscribeRealtime() {
