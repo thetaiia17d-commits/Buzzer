@@ -125,7 +125,7 @@
         }
 
         #btnLeave:hover {
-            background: #006400 !important; /* Xanh lá đậm khi hover */
+            background: orange !important;
         }
 
         .locked {
@@ -340,7 +340,7 @@
             myRoom = parseInt(code);
             myName = name;
             gameArea.style.display = "flex";
-            loginArea.style.display = "none";
+            loginArea.style.display = "flex";
 
             await syncServerTime();
             handleRoomUpdate(room);
