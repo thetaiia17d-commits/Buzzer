@@ -96,6 +96,7 @@
             text-align: left;
             resize: none;
             font-family: Arial, sans-serif;
+            text-transform: uppercase;
         }
 
         #btnSend {
@@ -734,6 +735,9 @@
             if (myRoom && myName) await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
         });
 
+        answerInput.addEventListener('input', function () {
+            this.value = this.value.toUpperCase();
+        });
         document.addEventListener("contextmenu", (e) => e.preventDefault());
     </script>
 </body>

@@ -42,6 +42,7 @@
             resize: none;
             margin-bottom: 10px;
             font-weight: bold;
+            text-transform: uppercase;
         }
 
         .textarea-locked {
@@ -524,6 +525,10 @@
             if (myRoom && myName) {
                 await supabase.from("participants").delete().eq("room_code", myRoom).eq("name", myName);
             }
+        });
+
+        answerInput.addEventListener('input', function () {
+            this.value = this.value.toUpperCase();
         });
 
         document.addEventListener("contextmenu", (e) => e.preventDefault());
