@@ -289,6 +289,20 @@
       color: black;
       font-weight: bold;
     }
+
+    .btn-delete {
+      background: red !important;
+      color: white !important;
+      font-weight: bold !important;
+      padding: 5px 10px !important;
+      border-radius: 4px !important;
+      border: none !important;
+      cursor: pointer;
+    }
+
+    .btn-delete:hover {
+      background: #ff00cc !important;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
@@ -374,8 +388,9 @@
   <table id="tblBuzz">
     <thead>
       <tr>
-        <th style="width: 70%;">Tên</th>
+        <th style="width: 50%;">Tên</th>
         <th style="width: 30%;">Thời gian</th>
+        <th style="width: 20%;">Thao tác</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -653,18 +668,36 @@
       });
     }
 
+    async function deleteBuzz(id) {
+      if (!id) return;
+      const { error } = await supabase.from('buzzes').delete().eq('id', id);
+      if (error) {
+        console.error("Lỗi khi xóa:", error.message);
+        showPopup("Không thể xóa: " + error.message, "error");
+      }
+    }
+
+    // Cập nhật hàm renderBuzzTable
     function renderBuzz() {
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
       if (!buzzOrder || buzzOrder.length === 0) return;
 
-      const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      const uniqueBuzzMap = new Map();
-      sorted.forEach(item => { if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item); });
-      Array.from(uniqueBuzzMap.values()).forEach(item => {
+      // Sắp xếp theo thời gian
+      buzzOrder.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      buzzOrder.forEach((item, index) => {
         const row = tblBuzzBody.insertRow();
-        row.insertCell().innerText = item.name;
-        row.insertCell().innerText = formatBuzzTime(item.created_at, buzzStartTime);
+        row.insertCell(0).innerText = item.name;
+        row.insertCell(1).innerText = formatBuzzTime(item.created_at, buzzStartTime);
+
+        // Thêm cột hành động và nút Xóa
+        const actionCell = row.insertCell(2);
+        const delBtn = document.createElement("button");
+        delBtn.innerText = "Xóa";
+        delBtn.className = "btn-delete";
+        delBtn.onclick = () => deleteBuzz(item.id);
+        actionCell.appendChild(delBtn);
       });
     }
 
@@ -928,30 +961,28 @@
         .channel(`buzzes-${currentRoom}`)
         .on(
           'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'buzzes',
-            filter: `room_code=eq.${currentRoom}`
-          },
+          { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
           payload => {
-            buzzOrder.push(payload.new);
-            renderBuzz();
-            buzzSound.play().catch(e => console.log("Audio play blocked"));
+            if (!buzzOrder.find(b => b.id === payload.new.id)) {
+              buzzOrder.push(payload.new);
+              renderBuzz();
+              buzzSound.play().catch(e => console.log("Audio play blocked"));
+            }
           }
         )
         .on(
           'postgres_changes',
-          {
-            event: 'DELETE',
-            schema: 'public',
-            table: 'buzzes',
-            filter: `room_code=eq.${currentRoom}`
-          },
-          () => {
-            buzzOrder = [];
+          { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${currentRoom}` },
+          (payload) => {
+            // Nếu có ID cụ thể (Xóa 1 người)
+            if (payload.old && payload.old.id) {
+              buzzOrder = buzzOrder.filter(b => b.id !== payload.old.id);
+            } else {
+              // Nếu xóa không có ID (Reset toàn bộ bảng)
+              buzzOrder = [];
+              showPopup("Chuông đã được Reset!");
+            }
             renderBuzz();
-            showPopup("Chuông đã được Reset!");
           }
         )
         .subscribe();

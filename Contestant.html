@@ -244,6 +244,7 @@
         let currentAnswerStartTime = 0;
         let currentBuzzStartTime = 0;
 
+        let myBuzzId = null;
         const loginArea = document.getElementById("loginArea");
         const gameArea = document.getElementById("gameArea");
         const lastAnswerStatus = document.getElementById("lastAnswerStatus");
@@ -371,14 +372,28 @@
         };
 
         btnBuzz.onclick = async () => {
-            if (lockedBuzz || hasBuzzed) return;
+            if (lockedBuzz || hasBuzzed || !myRoom || !myName) return;
             hasBuzzed = true;
-            updateBuzzUI(true);
+            btnBuzz.classList.add("locked");
 
             const elapsed = performance.now() - localBuzzReceiveTime;
-            const finalISO = new Date(serverBuzzOpenTime + elapsed).toISOString();
+            const adjustedTimestampMs = serverBuzzOpenTime + elapsed;
+            const finalISO = new Date(adjustedTimestampMs).toISOString();
 
-            await supabase.from('buzzes').insert([{ room_code: myRoom, name: myName, created_at: finalISO }]);
+            // Thêm .select() để Supabase trả về dữ liệu vừa insert (bao gồm ID)
+            const { data, error } = await supabase.from('buzzes').insert([{
+                room_code: myRoom,
+                name: myName,
+                created_at: finalISO
+            }]).select();
+
+            if (error) {
+                hasBuzzed = false;
+                btnBuzz.classList.remove("locked");
+                console.error("Lỗi bấm chuông:", error.message);
+            } else if (data && data.length > 0) {
+                myBuzzId = data[0].id; // Lưu lại ID này
+            }
         };
 
         // Hàm xử lý khi nhấn Rời khỏi phòng (Đã bỏ confirm)
@@ -413,10 +428,27 @@
                     lastAnswerStatus.innerText = "";
                     showPopup("Host đã Reset đáp án!");
                 })
-                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => {
-                    hasBuzzed = false;
-                    updateBuzzUI(lockedBuzz);
-                    showPopup("Host đã reset chuông!");
+                .on('postgres_changes', {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'buzzes',
+                    filter: `room_code=eq.${myRoom}`
+                }, (payload) => {
+                    // Trường hợp 1: Host xóa 1 người cụ thể
+                    // Nếu ID bị xóa khớp với ID của thí sinh này
+                    if (payload.old && payload.old.id === myBuzzId) {
+                        hasBuzzed = false;
+                        myBuzzId = null;
+                        updateBuzzUI(lockedBuzz); // Mở lại nút bấm nếu chuông vẫn đang "open"
+                    }
+                    // Trường hợp 2: Host nhấn Reset toàn bộ (xóa tất cả dòng)
+                    // Thường khi xóa hàng loạt, payload.old sẽ không có id cụ thể
+                    else if (!payload.old || !payload.old.id) {
+                        hasBuzzed = false;
+                        myBuzzId = null;
+                        updateBuzzUI(lockedBuzz);
+                        showPopup("Host đã reset chuông!");
+                    }
                 })
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => {
                     buzzSound.play().catch(e => console.log("Audio play blocked"));

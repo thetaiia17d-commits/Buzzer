@@ -268,7 +268,7 @@
         </div>
 
         <button id="btnBuzz">Bấm chuông</button>
-        
+
         <button id="btnLeave">Rời khỏi phòng</button>
 
         <h3>Thứ tự bấm chuông</h3>
@@ -307,6 +307,7 @@
         let lastAnswerResetAt = null;
         let lastBuzzResetAt = null;
 
+        let myBuzzId = null;
         let localAnswerReceiveTime = 0;
         let localBuzzReceiveTime = 0;
         let serverAnswerOpenTime = 0;
@@ -475,7 +476,7 @@
         btnJoin.onclick = async () => {
             const codeString = roomCodeInput.value.trim();
             const name = nameInput.value.trim();
-            const posInput = document.getElementById("positionInput").value.trim(); 
+            const posInput = document.getElementById("positionInput").value.trim();
 
             if (!codeString || !name || codeString.length !== 6) {
                 return showPopup("Mã phòng hoặc Tên không hợp lệ", "error");
@@ -519,7 +520,7 @@
                     .eq("room_code", myRoom)
                     .eq("name", myName);
             }
-            
+
             // Ngắt các kết nối Realtime hiện tại
             if (roomChannel) supabase.removeChannel(roomChannel);
             if (buzzesChannel) supabase.removeChannel(buzzesChannel);
@@ -529,11 +530,11 @@
             myName = "";
             hasBuzzed = false;
             buzzOrder = [];
-            
+
             // Quay về màn hình đăng nhập
             gameArea.style.display = "none";
             loginArea.style.display = "flex";
-            
+
             // Hiển thị thông báo nhẹ nhàng
             showPopup("Đã rời khỏi phòng!");
         };
@@ -573,22 +574,26 @@
             const adjustedTimestampMs = serverBuzzOpenTime + elapsed;
             const finalISO = new Date(adjustedTimestampMs).toISOString();
 
-            const { error } = await supabase.from('buzzes').insert([{
+            // THÊM .select() để lấy về ID bản ghi vừa tạo
+            const { data, error } = await supabase.from('buzzes').insert([{
                 room_code: myRoom,
                 name: myName,
                 created_at: finalISO
-            }]);
+            }]).select();
 
             if (error) {
                 hasBuzzed = false;
                 btnBuzz.classList.remove("locked");
                 console.error("Lỗi bấm chuông:", error.message);
+            } else if (data && data.length > 0) {
+                myBuzzId = data[0].id; // Lưu ID lại để kiểm tra khi bị Host xóa
             }
         };
 
         function subscribeRealtime() {
             if (roomChannel) supabase.removeChannel(roomChannel);
             if (buzzesChannel) supabase.removeChannel(buzzesChannel);
+
             roomChannel = supabase.channel('room-' + myRoom);
             roomChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `room_code=eq.${myRoom}` }, async (payload) => { handleRoomUpdate(payload.new); })
                 .on('postgres_changes', {
@@ -600,13 +605,43 @@
                     resetAnswerStatusBox();
                     showPopup("Host đã Reset đáp án!");
                 })
-                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => {
-                    hasBuzzed = false;
-                    buzzOrder = []; renderBuzzTable(); updateBuzzUI(lockedBuzz);
-                    showPopup("Host đã reset chuông!");
+                .on('postgres_changes', {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'buzzes',
+                    filter: `room_code=eq.${myRoom}`
+                }, (payload) => {
+                    // KIỂM TRA: Nếu Host xóa đúng ID của mình hoặc xóa toàn bộ (Reset)
+                    if (!payload.old || !payload.old.id || (myBuzzId && payload.old.id === myBuzzId)) {
+                        hasBuzzed = false;
+                        myBuzzId = null;
+                        updateBuzzUI(lockedBuzz); // Mở lại nút bấm nếu lockedBuzz đang là false
+                        if (!payload.old || !payload.old.id) {
+                            showPopup("Host đã reset chuông!");
+                        }
+                    }
+
+                    // Cập nhật lại bảng thứ tự (chỉ dành cho file Sub_Contestant)
+                    if (typeof fetchBuzzList === "function") {
+                        fetchBuzzList();
+                    } else {
+                        buzzOrder = [];
+                        if (typeof renderBuzzTable === "function") renderBuzzTable();
+                    }
                 })
                 .subscribe();
-            buzzesChannel = supabase.channel('buzzes-list').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, () => { fetchBuzzList(); buzzSound.play().catch(e => console.log("Audio play blocked")); }).subscribe();
+
+            buzzesChannel = supabase.channel('buzzes-list')
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'buzzes',
+                    filter: `room_code=eq.${myRoom}`
+                }, () => {
+                    if (typeof fetchBuzzList === "function") fetchBuzzList();
+                    buzzSound.play().catch(e => console.log("Audio play blocked"));
+                })
+                .subscribe();
         }
 
         async function handleRoomUpdate(roomData) {
