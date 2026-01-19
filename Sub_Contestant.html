@@ -201,8 +201,6 @@
         }
 
         #tblBuzz td {
-            background: white;
-            color: black;
             font-weight: bold;
             text-align: center;
             padding: 8px;
@@ -276,8 +274,10 @@
         <table id="tblBuzz">
             <thead>
                 <tr>
-                    <th style="width: 70%;">Tên</th>
-                    <th style="width: 30%;">Thời gian</th>
+                    <th style="width: 30%;">Tên</th>
+                    <th style="width: 25%;">Thời gian bấm</th>
+                    <th style="width: 25%;">Độ trễ</th>
+                    <th style="width: 20%;">Thời gian tổng</th>
                 </tr>
             </thead>
             <tbody>
@@ -400,18 +400,43 @@
         function renderBuzzTable() {
             tblBuzzBody.innerHTML = "";
             if (!buzzOrder || buzzOrder.length === 0) return;
+
+            // Sắp xếp theo created_at (Thời gian tổng)
             const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-            const uniqueBuzzMap = new Map();
-            sorted.forEach(item => { if (!uniqueBuzzMap.has(item.name)) uniqueBuzzMap.set(item.name, item); });
-            Array.from(uniqueBuzzMap.values()).forEach(item => {
+            
+            sorted.forEach(item => {
                 const row = tblBuzzBody.insertRow();
-                const cellName = row.insertCell();
+                
+                const serverReceived = new Date(item.created_at).getTime();
+                const clientPressed = new Date(item.press_time || item.created_at).getTime();
+                
+                const pressDiff = clientPressed - currentBuzzStartTime;
+                const latency = serverReceived - clientPressed;
+                const totalDiff = serverReceived - currentBuzzStartTime;
+
+                const cellName = row.insertCell(0);
                 cellName.innerText = item.name;
-                const cellTime = row.insertCell();
-                cellTime.innerText = formatTimeDisplay(item.created_at, currentBuzzStartTime);
+                
+                row.insertCell(1).innerText = (pressDiff / 1000).toFixed(3) + "s";
+                row.insertCell(2).innerText = latency + "ms";
+                
+                const cellTotal = row.insertCell(3);
+                cellTotal.innerText = (totalDiff / 1000).toFixed(3) + "s";
+
                 if (item.name === myName) {
-                    cellName.style.background = "red"; cellName.style.color = "white";
-                    cellTime.style.background = "red"; cellTime.style.color = "white";
+                    // Nếu là mình bấm: Nền đỏ, chữ trắng, in đậm (Ghi đè bằng !important)
+                    row.style.setProperty('background-color', 'red', 'important');
+                    Array.from(row.cells).forEach(cell => {
+                        cell.style.setProperty('color', 'white', 'important');
+                        cell.style.setProperty('font-weight', 'bold', 'important');
+                    });
+                } else {
+                    // Nếu là người khác: Nền trắng, chữ đen, in đậm (Ghi đè bằng !important)
+                    row.style.setProperty('background-color', 'white', 'important');
+                    Array.from(row.cells).forEach(cell => {
+                        cell.style.setProperty('color', 'black', 'important');
+                        cell.style.setProperty('font-weight', 'bold', 'important');
+                    });
                 }
             });
         }
@@ -573,21 +598,22 @@
 
             const elapsed = performance.now() - localBuzzReceiveTime;
             const adjustedTimestampMs = serverBuzzOpenTime + elapsed;
-            const finalISO = new Date(adjustedTimestampMs).toISOString();
+            const pressTimeISO = new Date(adjustedTimestampMs).toISOString();
 
-            // THÊM .select() để lấy về ID bản ghi vừa tạo
+            // Gửi press_time (máy khách bấm), để server tự sinh created_at (khi nhận được)
             const { data, error } = await supabase.from('buzzes').insert([{
                 room_code: myRoom,
                 name: myName,
-                created_at: finalISO
+                press_time: pressTimeISO 
+                // Không gửi created_at để Supabase tự tạo mốc thời gian nhận tín hiệu
             }]).select();
 
             if (error) {
                 hasBuzzed = false;
                 btnBuzz.classList.remove("locked");
-                console.error("Lỗi bấm chuông:", error.message);
+                console.error("Lỗi:", error.message);
             } else if (data && data.length > 0) {
-                myBuzzId = data[0].id; // Lưu ID lại để kiểm tra khi bị Host xóa
+                myBuzzId = data[0].id;
             }
         };
 

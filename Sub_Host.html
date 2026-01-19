@@ -55,7 +55,7 @@
     }
 
     #tblBuzz {
-      width: 600px;
+      width: 90%;
     }
 
     #roomInfo {
@@ -376,8 +376,8 @@
   <table id="tblAnswers">
     <thead>
       <tr>
-        <th style="width: 30%;">Tên</th>
-        <th style="width: 50%;">Đáp án</th>
+        <th style="width: 20%;">Tên</th>
+        <th style="width: 60%;">Đáp án</th>
         <th style="width: 20%;">Thời gian</th>
       </tr>
     </thead>
@@ -388,8 +388,10 @@
   <table id="tblBuzz">
     <thead>
       <tr>
-        <th style="width: 50%;">Tên</th>
-        <th style="width: 30%;">Thời gian</th>
+        <th style="width: 20%;">Tên</th>
+        <th style="width: 20%;">Thời gian bấm</th>
+        <th style="width: 20%;">Độ trễ</th>
+        <th style="width: 20%;">Thời gian tổng</th>
         <th style="width: 20%;">Thao tác</th>
       </tr>
     </thead>
@@ -513,12 +515,9 @@
       return (diff / 1000).toFixed(2);
     }
 
-    function formatBuzzTime(isoDate, startTime) {
-      if (!startTime || !isoDate) return "0.000";
-      const ts = new Date(isoDate).getTime();
-      let diff = ts - startTime;
-      if (diff < 0) diff = 0;
-      return (diff / 1000).toFixed(3) + "s";
+    function formatBuzzTime(ms) {
+      if (isNaN(ms) || ms < 0) ms = 0;
+      return (ms / 1000).toFixed(3) + "s";
     }
 
     async function syncServerTime() {
@@ -681,18 +680,38 @@
     function renderBuzz() {
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
+
+      // LẤY MỐC THỜI GIAN MỞ CHUÔNG TỪ ROOM INFO
+      if (!roomInfoData || !roomInfoData.buzz_open_time) return;
+      const startTime = new Date(roomInfoData.buzz_open_time).getTime();
+
       if (!buzzOrder || buzzOrder.length === 0) return;
 
-      // Sắp xếp theo thời gian
-      buzzOrder.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      // Sắp xếp theo created_at (Thời gian tổng - tín hiệu đến Host)
+      const sortedBuzz = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-      buzzOrder.forEach((item, index) => {
+      sortedBuzz.forEach((item) => {
         const row = tblBuzzBody.insertRow();
-        row.insertCell(0).innerText = item.name;
-        row.insertCell(1).innerText = formatBuzzTime(item.created_at, buzzStartTime);
 
-        // Thêm cột hành động và nút Xóa
-        const actionCell = row.insertCell(2);
+        const serverReceived = new Date(item.created_at).getTime();
+        // Nếu không có press_time thì dùng tạm created_at (trường hợp dữ liệu cũ)
+        const clientPressed = new Date(item.press_time || item.created_at).getTime();
+
+        // Tính toán theo yêu cầu
+        const pressDiff = clientPressed - startTime; // Thời gian bấm
+        const latency = serverReceived - clientPressed; // Độ trễ
+        const totalDiff = serverReceived - startTime; // Thời gian tổng
+
+        row.insertCell(0).innerText = item.name;
+        row.insertCell(1).innerText = formatBuzzTime(pressDiff);
+        row.insertCell(2).innerText = `+${latency}ms`;
+
+        const totalCell = row.insertCell(3);
+        totalCell.innerText = formatBuzzTime(totalDiff);
+        totalCell.style.color = "red";
+        totalCell.style.fontWeight = "bold";
+
+        const actionCell = row.insertCell(4);
         const delBtn = document.createElement("button");
         delBtn.innerText = "Xóa";
         delBtn.className = "btn-delete";
@@ -1067,17 +1086,12 @@
       if (!currentRoom) return;
       const table = isAnswer ? 'answers' : 'buzzes';
 
-      // 1. Xóa dữ liệu trên bảng answers/buzzes của phòng này
-      const { error } = await supabase.from(table).delete().eq('room_code', currentRoom);
+      // Xóa sạch danh sách cũ
+      await supabase.from(table).delete().eq('room_code', currentRoom);
+      if (!isAnswer) buzzOrder = [];
 
-      if (error) {
-        showPopup("Lỗi khi reset: " + error.message, "error");
-        return;
-      }
-
-      // 2. Chuẩn bị dữ liệu cập nhật cho bảng 'rooms'
       let updates = {};
-      const nowISO = new Date().toISOString();
+      const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
 
       if (isAnswer) {
         updates = {
@@ -1087,20 +1101,19 @@
           answer_reset_at: nowISO
         };
       } else {
-        // KIỂM TRA: Nếu đang ở chế độ Mở chuông vĩnh viễn (status open và duration = 0)
-        const isPermanentOpen = roomInfoData.buzz_status === 'open' && (roomInfoData.buzz_duration === 0);
+        // Nếu đang ở chế độ Mở vĩnh viễn (duration = 0), reset mốc 0.000s
+        const isPermanent = roomInfoData.buzz_status === 'open' && roomInfoData.buzz_duration === 0;
 
-        if (isPermanentOpen) {
+        if (isPermanent) {
           updates = {
-            buzz_status: 'open',
-            buzz_duration: 0,
-            buzz_open_time: nowISO, // Cập nhật mốc thời gian mới để tính giây lại từ đầu (0.000s)
+            buzz_open_time: nowISO, // Đặt lại mốc 0
             buzz_reset_at: nowISO
           };
+          // Cập nhật local ngay lập tức để tránh render lỗi 0.000s
+          roomInfoData.buzz_open_time = nowISO;
         } else {
           updates = {
             buzz_status: 'locked',
-            buzz_duration: 0,
             buzz_open_time: null,
             buzz_reset_at: nowISO
           };
@@ -1108,6 +1121,7 @@
       }
 
       await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
+      renderBuzz();
     }
 
     function toggleAddType() { generateAddRows(); }

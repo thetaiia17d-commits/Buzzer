@@ -344,6 +344,10 @@
             const posValue = pos === "" ? null : parseInt(pos);
             await supabase.from('participants').upsert([{ room_code: parseInt(code), name, role: 'contestant', position: posValue }]);
 
+            const { data: syncData } = await supabase.from('participants').select('created_at').eq('room_code', myRoom).eq('name', myName).single();
+            if (syncData) {
+                serverTimeOffset = new Date(syncData.created_at).getTime() - Date.now();
+            }
             myRoom = parseInt(code);
             myName = name;
             gameArea.style.display = "flex";
@@ -373,27 +377,24 @@
         };
 
         btnBuzz.onclick = async () => {
-            if (lockedBuzz || hasBuzzed || !myRoom || !myName) return;
+            if (lockedBuzz || hasBuzzed) return;
             hasBuzzed = true;
-            btnBuzz.classList.add("locked");
+            updateBuzzUI(true);
 
-            const elapsed = performance.now() - localBuzzReceiveTime;
-            const adjustedTimestampMs = serverBuzzOpenTime + elapsed;
-            const finalISO = new Date(adjustedTimestampMs).toISOString();
+            // Lấy thời gian hiện tại của máy và cộng thêm độ lệch server đã tính ở Bước 2
+            const nowServer = new Date(Date.now() + serverTimeOffset);
+            const pressTimeISO = nowServer.toISOString();
 
-            // Thêm .select() để Supabase trả về dữ liệu vừa insert (bao gồm ID)
             const { data, error } = await supabase.from('buzzes').insert([{
                 room_code: myRoom,
                 name: myName,
-                created_at: finalISO
+                press_time: pressTimeISO // Gửi mốc thời gian này để Host tính "Thời gian bấm"
             }]).select();
 
             if (error) {
                 hasBuzzed = false;
-                btnBuzz.classList.remove("locked");
-                console.error("Lỗi bấm chuông:", error.message);
-            } else if (data && data.length > 0) {
-                myBuzzId = data[0].id; // Lưu lại ID này
+                updateBuzzUI(false);
+                showPopup("Lỗi bấm chuông: " + error.message, true);
             }
         };
 
