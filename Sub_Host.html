@@ -809,9 +809,9 @@
         if (addType === 'answer') {
           row.innerHTML += `<input type="text" class="add-answer" placeholder="Đáp án"><input type="number" class="add-answer-time" placeholder="Tg (s)" step="0.01" style="width:80px">`;
         } else {
-          row.innerHTML += `<input type="number" class="add-buzz-time" placeholder="Tg (s)" step="0.01" style="width:100px">`;
+          row.innerHTML += `<input type="number" class="add-buzz-time" placeholder="Tg (s)" step="0.001" style="width:100px">`;
         }
-        row.innerHTML += `<label><input type="checkbox" class="add-time-limited-checkbox" checked> G.Hạn?</label>`;
+        row.innerHTML += `<label><input type="checkbox" class="add-time-limited-checkbox" checked><strong> G.Hạn?</strong></label>`;
         container.appendChild(row);
       }
     }
