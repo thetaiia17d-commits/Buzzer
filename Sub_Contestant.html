@@ -598,7 +598,8 @@
 
             const elapsed = performance.now() - localBuzzReceiveTime;
             const adjustedTimestampMs = serverBuzzOpenTime + elapsed;
-            const pressTimeISO = new Date(adjustedTimestampMs).toISOString();
+            const pressTimeISO =
+    new Date(Date.now() + serverTimeOffset).toISOString();
 
             // Gửi press_time (máy khách bấm), để server tự sinh created_at (khi nhận được)
             const { data, error } = await supabase.from('buzzes').insert([{
