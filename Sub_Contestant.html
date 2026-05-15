@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
-
+ 
 <head>
     <meta charset="UTF-8">
     <title>Thí sinh</title>
@@ -478,12 +478,10 @@
 
             if (duration <= 0) { el.innerText = "--.--s"; return; }
 
-            const startPerf = performance.now();
-            const endPerf = startPerf + (duration * 1000);
+            const endTime = (Date.now() + serverTimeOffset) + (duration * 1000);
 
             const update = () => {
-                const nowPerf = performance.now();
-                let remain = endPerf - nowPerf;
+                const remain = endTime - (Date.now() + serverTimeOffset);
                 if (remain <= 0) {
                     el.innerText = "0.000s";
                     if (elementId === 'answerCountdown') { clearInterval(answerInterval); answerInterval = null; }

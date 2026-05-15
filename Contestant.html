@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
-
+ 
 <head>
     <meta charset="UTF-8">
     <title>Thí sinh</title>
@@ -315,9 +315,9 @@
 
             if (duration <= 0) { el.innerText = "--.--s"; return; }
 
-            const endTime = performance.now() + (duration * 1000);
+            let endTime = (Date.now() + serverTimeOffset) + (duration * 1000);
             const timer = setInterval(() => {
-                const remain = endTime - performance.now();
+                const remain = endTime - (Date.now() + serverTimeOffset);
                 if (remain <= 0) {
                     el.innerText = "0.000s";
                     clearInterval(timer);
