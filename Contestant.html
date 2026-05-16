@@ -308,19 +308,28 @@
             }
         }
 
-        function startTimer(elementId, duration, onEnd) {
+        function startTimer(elementId, endTime, onEnd) {
             const el = document.getElementById(elementId);
-            if (elementId === 'answerCountdown') clearInterval(answerInterval);
-            else clearInterval(buzzInterval);
+            if (elementId === 'answerCountdown') {
+                if (answerInterval) clearInterval(answerInterval);
+            } else {
+                if (buzzInterval) clearInterval(buzzInterval);
+            }
 
-            if (duration <= 0) { el.innerText = "--.--s"; return; }
+            const now = Date.now() + serverTimeOffset;
+            if (!endTime || endTime <= now) {
+                el.innerText = "0.000s";
+                if (onEnd) onEnd();
+                return;
+            }
 
-            let endTime = (Date.now() + serverTimeOffset) + (duration * 1000);
             const timer = setInterval(() => {
                 const remain = endTime - (Date.now() + serverTimeOffset);
                 if (remain <= 0) {
                     el.innerText = "0.000s";
                     clearInterval(timer);
+                    if (elementId === 'answerCountdown') answerInterval = null;
+                    if (elementId === 'buzzCountdown') buzzInterval = null;
                     if (onEnd) onEnd();
                 } else {
                     el.innerText = (remain / 1000).toFixed(3) + "s";
@@ -351,7 +360,7 @@
             myRoom = parseInt(code);
             myName = name;
             gameArea.style.display = "flex";
-            loginArea.style.display = "flex";
+            loginArea.style.display = "none";
 
             await syncServerTime();
             handleRoomUpdate(room);
@@ -473,12 +482,21 @@
             const isAnswerOpen = (roomData.answer_status === 'open');
             if (isAnswerOpen && roomData.answer_open_time) {
                 const startTime = new Date(roomData.answer_open_time).getTime();
+                const endTime = startTime + ((roomData.answer_duration || 0) * 1000);
                 if (currentAnswerStartTime !== startTime) {
                     currentAnswerStartTime = startTime;
                     serverAnswerOpenTime = startTime;
                     localAnswerReceiveTime = performance.now();
                     updateAnswerUI(false);
-                    startTimer('answerCountdown', roomData.answer_duration, () => updateAnswerUI(true));
+                    if (roomData.answer_duration > 0) {
+                        startTimer('answerCountdown', endTime, () => updateAnswerUI(true));
+                    } else {
+                        document.getElementById('answerCountdown').innerText = "Đang mở (Không giới hạn)";
+                    }
+                } else if (roomData.answer_duration > 0 && Date.now() + serverTimeOffset >= endTime) {
+                    updateAnswerUI(true);
+                    if (answerInterval) { clearInterval(answerInterval); answerInterval = null; }
+                    document.getElementById('answerCountdown').innerText = "0.000s";
                 }
             } else {
                 updateAnswerUI(true);
@@ -493,12 +511,21 @@
             const isBuzzOpen = (roomData.buzz_status === 'open');
             if (isBuzzOpen && roomData.buzz_open_time) {
                 const startTime = new Date(roomData.buzz_open_time).getTime();
+                const endTime = startTime + ((roomData.buzz_duration || 0) * 1000);
                 if (currentBuzzStartTime !== startTime) {
                     currentBuzzStartTime = startTime;
                     serverBuzzOpenTime = startTime;
                     localBuzzReceiveTime = performance.now();
                     updateBuzzUI(false);
-                    startTimer('buzzCountdown', roomData.buzz_duration, () => updateBuzzUI(true));
+                    if (roomData.buzz_duration > 0) {
+                        startTimer('buzzCountdown', endTime, () => updateBuzzUI(true));
+                    } else {
+                        document.getElementById('buzzCountdown').innerText = "Đang mở (Không giới hạn)";
+                    }
+                } else if (roomData.buzz_duration > 0 && Date.now() + serverTimeOffset >= endTime) {
+                    updateBuzzUI(true);
+                    if (buzzInterval) { clearInterval(buzzInterval); buzzInterval = null; }
+                    document.getElementById('buzzCountdown').innerText = "0.000s";
                 }
             } else {
                 updateBuzzUI(true);

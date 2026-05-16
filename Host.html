@@ -583,6 +583,16 @@
       return (ms / 1000).toFixed(3) + "s";
     }
 
+    function saveDataToLocalStorage() {
+      try {
+        localStorage.setItem('buzzer_answers', JSON.stringify(answers));
+        localStorage.setItem('buzzer_participants', JSON.stringify(allParticipants));
+        localStorage.setItem('buzzer_roomInfo', JSON.stringify(roomInfoData));
+      } catch (e) {
+        console.error("Lỗi lưu dữ liệu vào localStorage:", e);
+      }
+    }
+
     function updateBuzzConfigVisibility() {
       const extraModes = document.getElementById("extraModes");
       if (!extraModes) return;
@@ -1035,6 +1045,7 @@
         answers = [];
         renderAnswers();
         showPopup("Đáp án đã bị Reset!");
+        saveDataToLocalStorage();
       }
 
       // ================= RESET BUZZ =================
@@ -1051,6 +1062,7 @@
       // ===== cập nhật trạng thái phòng SAU =====
       roomInfoData = room;
       updateUI();
+      saveDataToLocalStorage();
     }
 
     function subscribeRealtime() {
@@ -1085,6 +1097,7 @@
           payload => {
             answers.push(payload.new);
             renderAnswers();
+            saveDataToLocalStorage();
           }
         )
         .on(
@@ -1099,6 +1112,7 @@
             answers = [];
             renderAnswers();
             showPopup("Đáp án đã được Reset!");
+            saveDataToLocalStorage();
           }
         )
         .subscribe();
@@ -1156,6 +1170,7 @@
             if (!exists) {
               allParticipants.push(payload.new);
               renderUserListPopup();
+              saveDataToLocalStorage();
             }
           }
         )
@@ -1172,6 +1187,7 @@
             // Xóa user khỏi mảng local ngay lập tức dựa trên ID bị xóa
             allParticipants = allParticipants.filter(u => u.id !== payload.old.id);
             renderUserListPopup();
+            saveDataToLocalStorage();
           }
         )
         .on(
@@ -1187,6 +1203,7 @@
             if (index !== -1) {
               allParticipants[index] = payload.new;
               renderUserListPopup();
+              saveDataToLocalStorage();
             }
           }
         )

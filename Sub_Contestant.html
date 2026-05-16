@@ -471,14 +471,17 @@
             }
         }
 
-        function startTimer(elementId, duration, callbackEnd) {
+        function startTimer(elementId, endTime, callbackEnd) {
             const el = document.getElementById(elementId);
             if (elementId === 'answerCountdown' && answerInterval) clearInterval(answerInterval);
             if (elementId === 'buzzCountdown' && buzzInterval) clearInterval(buzzInterval);
 
-            if (duration <= 0) { el.innerText = "--.--s"; return; }
-
-            const endTime = (Date.now() + serverTimeOffset) + (duration * 1000);
+            const now = Date.now() + serverTimeOffset;
+            if (!endTime || endTime <= now) {
+                el.innerText = "0.000s";
+                if (callbackEnd) callbackEnd();
+                return;
+            }
 
             const update = () => {
                 const remain = endTime - (Date.now() + serverTimeOffset);
@@ -700,12 +703,20 @@
                     localAnswerReceiveTime = performance.now();
 
                     updateAnswerUI(false);
-                    startTimer(
-                        'answerCountdown',
-                        roomData.answer_duration,
-                        () => updateAnswerUI(true)
-                    );
+                    if (roomData.answer_duration > 0) {
+                        startTimer(
+                            'answerCountdown',
+                            newAnswerStartTime + ((roomData.answer_duration || 0) * 1000),
+                            () => updateAnswerUI(true)
+                        );
+                    } else {
+                        document.getElementById('answerCountdown').innerText = "Đang mở (Không giới hạn)";
+                    }
                     await fetchMyLastAnswer();
+                } else if (roomData.answer_duration > 0 && Date.now() + serverTimeOffset >= newAnswerStartTime + ((roomData.answer_duration || 0) * 1000)) {
+                    updateAnswerUI(true);
+                    if (answerInterval) { clearInterval(answerInterval); answerInterval = null; }
+                    document.getElementById('answerCountdown').innerText = "0.000s";
                 }
             } else {
                 updateAnswerUI(true);
@@ -726,12 +737,20 @@
                     localBuzzReceiveTime = performance.now();
 
                     updateBuzzUI(false);
-                    startTimer(
-                        'buzzCountdown',
-                        roomData.buzz_duration,
-                        () => updateBuzzUI(true)
-                    );
+                    if (roomData.buzz_duration > 0) {
+                        startTimer(
+                            'buzzCountdown',
+                            newBuzzStartTime + ((roomData.buzz_duration || 0) * 1000),
+                            () => updateBuzzUI(true)
+                        );
+                    } else {
+                        document.getElementById('buzzCountdown').innerText = "Đang mở (Không giới hạn)";
+                    }
                     await fetchBuzzList();
+                } else if (roomData.buzz_duration > 0 && Date.now() + serverTimeOffset >= newBuzzStartTime + ((roomData.buzz_duration || 0) * 1000)) {
+                    updateBuzzUI(true);
+                    if (buzzInterval) { clearInterval(buzzInterval); buzzInterval = null; }
+                    document.getElementById('buzzCountdown').innerText = "0.000s";
                 }
             } else {
                 updateBuzzUI(true);
