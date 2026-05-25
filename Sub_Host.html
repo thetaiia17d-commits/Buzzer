@@ -549,6 +549,7 @@
     let buzzLastOpenedDuration = 0;
     let buzzLimitedMode2 = 0;
     let buzzPermanentMode3 = 0;
+    let isResettingBuzz = false;
 
     const buzzSound = new Audio("buzzer.mp3");
     function showPopup(message, type = "success") {
@@ -590,7 +591,21 @@
       extraModes.style.display = mode === '1' ? 'block' : 'none';
     }
 
-    function saveBuzzConfig() {
+    function syncBuzzConfigUI() {
+      const buzzModeRad = document.querySelector(`input[name="buzz_mode"][value="${buzzSingleMode}"]`);
+      if (buzzModeRad) buzzModeRad.checked = true;
+
+      const mode2Rad = document.querySelector(`input[name="mode2"][value="${buzzLimitedMode2}"]`);
+      if (mode2Rad) mode2Rad.checked = true;
+
+      const mode3Rad = document.querySelector(`input[name="mode3"][value="${buzzPermanentMode3}"]`);
+      if (mode3Rad) mode3Rad.checked = true;
+
+      updateBuzzConfigVisibility();
+    }
+
+    async function saveBuzzConfig() {
+      const oldMode = roomInfoData?.buzz_mode;
       buzzSingleMode = parseInt(document.querySelector('input[name="buzz_mode"]:checked')?.value || '0');
       buzzLimitedMode2 = parseInt(document.querySelector('input[name="mode2"]:checked')?.value || '0');
       buzzPermanentMode3 = parseInt(document.querySelector('input[name="mode3"]:checked')?.value || '0');
@@ -599,6 +614,23 @@
         buzzSinglePausedRemaining = 0;
         buzzSinglePausedElapsed = 0;
       }
+      
+      if (currentRoom) {
+        await supabase.from('rooms').update({
+          buzz_mode: buzzSingleMode,
+          buzz_mode2: buzzLimitedMode2,
+          buzz_mode3: buzzPermanentMode3
+        }).eq('room_code', currentRoom);
+        
+        // Nếu từ chế độ single (1) sang tất cả (0) và chuông đang mở, reset để contestant có thể bấm lại
+        if (oldMode === 1 && buzzSingleMode === 0 && roomInfoData?.buzz_status === 'open') {
+          const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
+          await supabase.from('rooms').update({
+            buzz_reset_at: nowISO
+          }).eq('room_code', currentRoom);
+        }
+      }
+      
       showPopup("Đã lưu cấu hình chuông!");
       const popup = document.getElementById("buzzConfigPopup");
       if (popup) popup.style.display = "none";
@@ -819,7 +851,10 @@
       // Sắp xếp theo created_at (Thời gian tổng - tín hiệu đến Host)
       const sortedBuzz = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-      sortedBuzz.forEach((item) => {
+      // Nếu ở chế độ single-buzzer, chỉ hiển thị người bấm đầu tiên
+      const displayBuzz = (buzzSingleMode === 1 && sortedBuzz.length > 0) ? [sortedBuzz[0]] : sortedBuzz;
+
+      displayBuzz.forEach((item) => {
         const row = tblBuzzBody.insertRow();
 
         const serverReceived = new Date(item.created_at).getTime();
@@ -1010,6 +1045,19 @@
     function handleRoomUpdate(room) {
       roomInfoData = room;
       const now = Date.now() + serverTimeOffset;
+      
+      // Cập nhật buzz_mode từ database
+      if (room.buzz_mode !== undefined && room.buzz_mode !== null) {
+        buzzSingleMode = parseInt(room.buzz_mode);
+      }
+      if (room.buzz_mode2 !== undefined && room.buzz_mode2 !== null) {
+        buzzLimitedMode2 = parseInt(room.buzz_mode2);
+      }
+      if (room.buzz_mode3 !== undefined && room.buzz_mode3 !== null) {
+        buzzPermanentMode3 = parseInt(room.buzz_mode3);
+      }
+      syncBuzzConfigUI();
+      
       const newAnswerStart = room.answer_open_time ? new Date(room.answer_open_time).getTime() : 0;
       if (room.answer_status === 'open' || (room.answer_status === 'pending_open' && newAnswerStart > 0)) {
         answerStartTime = newAnswerStart;
@@ -1113,6 +1161,11 @@
           payload => {
             if (!buzzOrder.find(b => b.id === payload.new.id)) {
               buzzOrder.push(payload.new);
+              // THÊM ĐIỀU KIỆN TỰ ĐỘNG KHÓA
+              if (buzzSingleMode === 1 && buzzOrder.length === 1) {
+                updateRoomStatus('locked', 0, false);
+              }
+
               renderBuzz();
               buzzSound.play().catch(e => console.log("Audio play blocked"));
               if (buzzSingleMode === 1 && !buzzSinglePaused) {
@@ -1128,8 +1181,8 @@
             // Nếu có ID cụ thể (Xóa 1 người)
             if (payload.old && payload.old.id) {
               buzzOrder = buzzOrder.filter(b => b.id !== payload.old.id);
-            } else {
-              // Nếu xóa không có ID (Reset toàn bộ bảng)
+            } else if (isResettingBuzz) {
+              // Chỉ xóa toàn bộ bảng nếu đây là từ Reset button
               buzzOrder = [];
               showPopup("Chuông đã được Reset!");
             }
@@ -1218,6 +1271,9 @@
       if (!currentRoom) return;
       const table = isAnswer ? 'answers' : 'buzzes';
 
+      // Set flag để báo hiệu đây là lệnh Reset từ button
+      if (!isAnswer) isResettingBuzz = true;
+
       // Xóa sạch danh sách cũ
       await supabase.from(table).delete().eq('room_code', currentRoom);
       if (!isAnswer) buzzOrder = [];
@@ -1254,6 +1310,9 @@
 
       await supabase.from('rooms').update(updates).eq('room_code', currentRoom);
       renderBuzz();
+      
+      // Reset flag sau 1 giây để tránh nhầm lẫn
+      if (!isAnswer) setTimeout(() => { isResettingBuzz = false; }, 1000);
     }
 
     function toggleAddType() { generateAddRows(); }
@@ -1318,10 +1377,11 @@
       document.getElementById("btnConfirmAdd").onclick = handleConfirmAdd;
       document.getElementById("btnOpenBuzzConfig").onclick = () => {
         document.getElementById("buzzConfigPopup").style.display = "flex";
-        updateBuzzConfigVisibility();
+        syncBuzzConfigUI();
       };
       document.getElementById("btnCloseConfig").onclick = () => document.getElementById("buzzConfigPopup").style.display = "none";
-      document.querySelectorAll('input[name="buzz_mode"]').forEach(el => el.addEventListener('change', updateBuzzConfigVisibility));
+      document.querySelectorAll('input[name="buzz_mode"]').forEach(el => el.addEventListener('change', () => { updateBuzzConfigVisibility(); saveBuzzConfig(); }));
+      document.querySelectorAll('input[name="mode2"], input[name="mode3"]').forEach(el => el.addEventListener('change', saveBuzzConfig));
       document.getElementById("btnSaveConfig").onclick = saveBuzzConfig;
       document.getElementById("btnExportResults").onclick = () => {
         const wb = XLSX.utils.book_new();
@@ -1333,7 +1393,7 @@
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(d2), "Chuong");
         XLSX.writeFile(wb, `KetQua_${currentRoom}.xlsx`);
       };
-
+ 
       const btnSetCorrect = document.getElementById("btnSetCorrect");
       const correctPopup = document.getElementById("correctPopup");
       const btnSaveCorrect = document.getElementById("btnSaveCorrect");

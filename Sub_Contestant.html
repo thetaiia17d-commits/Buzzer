@@ -252,7 +252,7 @@
             style="width: 250px; font-weight: bold;">
         <button id="btnJoin">Xác nhận vào phòng</button>
     </div>
-
+ 
     <div id="gameArea">
         <div class="timer-container">
             <div class="timer-info">Đáp án: <span id="answerCountdown" class="timer-countdown">--.--s</span></div>
@@ -307,6 +307,9 @@
         let buzzOrder = [];
         let lastAnswerResetAt = null;
         let lastBuzzResetAt = null;
+        let buzzSingleMode = 0;
+        let anyoneBuzzed = false;
+        let isResettingBuzz = false;
 
         let myBuzzId = null;
         let localAnswerReceiveTime = 0;
@@ -404,7 +407,10 @@
             // Sắp xếp theo created_at (Thời gian tổng)
             const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             
-            sorted.forEach(item => {
+            // Nếu ở chế độ single-buzzer, chỉ hiển thị người bấm đầu tiên
+            const displayBuzz = (buzzSingleMode === 1 && sorted.length > 0) ? [sorted[0]] : sorted;
+
+            displayBuzz.forEach(item => {
                 const row = tblBuzzBody.insertRow();
                 
                 const serverReceived = new Date(item.created_at).getTime();
@@ -424,14 +430,12 @@
                 cellTotal.innerText = (totalDiff / 1000).toFixed(3) + "s";
 
                 if (item.name === myName) {
-                    // Nếu là mình bấm: Nền đỏ, chữ trắng, in đậm (Ghi đè bằng !important)
                     row.style.setProperty('background-color', 'red', 'important');
                     Array.from(row.cells).forEach(cell => {
                         cell.style.setProperty('color', 'white', 'important');
                         cell.style.setProperty('font-weight', 'bold', 'important');
                     });
                 } else {
-                    // Nếu là người khác: Nền trắng, chữ đen, in đậm (Ghi đè bằng !important)
                     row.style.setProperty('background-color', 'white', 'important');
                     Array.from(row.cells).forEach(cell => {
                         cell.style.setProperty('color', 'black', 'important');
@@ -593,7 +597,8 @@
         };
 
         btnBuzz.onclick = async () => {
-            if (lockedBuzz || hasBuzzed || !myRoom || !myName) return;
+            // Kiểm tra xem chuông đã bị khóa (cục bộ hoặc từ server) hay chưa
+            if (lockedBuzz || hasBuzzed || !myRoom || !myName || (buzzSingleMode === 1 && anyoneBuzzed)) return;
             hasBuzzed = true;
             btnBuzz.classList.add("locked");
 
@@ -616,6 +621,13 @@
                 console.error("Lỗi:", error.message);
             } else if (data && data.length > 0) {
                 myBuzzId = data[0].id;
+                // Nếu ở chế độ single-buzz, khóa chuông ngay lập tức
+                if (buzzSingleMode === 1) {
+                    lockedBuzz = true;
+                    updateBuzzUI(true);
+                    anyoneBuzzed = true;
+                    await supabase.from('rooms').update({ buzz_status: 'locked' }).eq('room_code', myRoom);
+                }
             }
         };
 
@@ -640,12 +652,19 @@
                     table: 'buzzes',
                     filter: `room_code=eq.${myRoom}`
                 }, (payload) => {
-                    // KIỂM TRA: Nếu Host xóa đúng ID của mình hoặc xóa toàn bộ (Reset)
-                    if (!payload.old || !payload.old.id || (myBuzzId && payload.old.id === myBuzzId)) {
+                    // KIỂM TRA: Nếu Host xóa đúng ID của mình
+                    if (payload.old && payload.old.id && myBuzzId && payload.old.id === myBuzzId) {
                         hasBuzzed = false;
                         myBuzzId = null;
                         updateBuzzUI(lockedBuzz); // Mở lại nút bấm nếu lockedBuzz đang là false
-                        if (!payload.old || !payload.old.id) {
+                    }
+                    
+                    // Chỉ xóa toàn bộ nếu đây là từ Reset button (isResettingBuzz = true)
+                    if (!payload.old || !payload.old.id) {
+                        if (isResettingBuzz) {
+                            hasBuzzed = false;
+                            myBuzzId = null;
+                            updateBuzzUI(lockedBuzz);
                             showPopup("Host đã reset chuông!");
                         }
                     }
@@ -654,7 +673,9 @@
                     if (typeof fetchBuzzList === "function") {
                         fetchBuzzList();
                     } else {
-                        buzzOrder = [];
+                        if (isResettingBuzz) {
+                            buzzOrder = [];
+                        }
                         if (typeof renderBuzzTable === "function") renderBuzzTable();
                     }
                 })
@@ -669,12 +690,25 @@
                 }, () => {
                     if (typeof fetchBuzzList === "function") fetchBuzzList();
                     buzzSound.play().catch(e => console.log("Audio play blocked"));
+                    // Nếu ở chế độ single-buzz (buzz_mode = 1), khóa chuông ngay lập tức cho tất cả mọi người
+                    if (buzzSingleMode === 1) {
+                        lockedBuzz = true;
+                        updateBuzzUI(true);
+                    }
                 })
                 .subscribe();
         }
 
         async function handleRoomUpdate(roomData) {
             if (!roomData) return;
+
+            // Lưu buzz_mode cũ trước khi cập nhật
+            const oldBuzzMode = buzzSingleMode;
+            
+            // Cập nhật buzz_mode từ database
+            if (roomData.buzz_mode !== undefined && roomData.buzz_mode !== null) {
+                buzzSingleMode = parseInt(roomData.buzz_mode);
+            }
 
             if (roomData.answer_reset_at &&
                 roomData.answer_reset_at !== lastAnswerResetAt) {
@@ -687,6 +721,7 @@
                 roomData.buzz_reset_at !== lastBuzzResetAt) {
                 lastBuzzResetAt = roomData.buzz_reset_at;
                 hasBuzzed = false;
+                anyoneBuzzed = false;
                 buzzOrder = [];
                 renderBuzzTable();
                 showPopup("Chuông đã được Reset!");
@@ -732,6 +767,7 @@
             if (isBuzzOpen && buzzOpenTimeISO) {
                 if (currentBuzzStartTime !== newBuzzStartTime) {
                     hasBuzzed = false;
+                    anyoneBuzzed = false;
                     currentBuzzStartTime = newBuzzStartTime;
                     serverBuzzOpenTime = newBuzzStartTime;
                     localBuzzReceiveTime = performance.now();
@@ -751,6 +787,13 @@
                     updateBuzzUI(true);
                     if (buzzInterval) { clearInterval(buzzInterval); buzzInterval = null; }
                     document.getElementById('buzzCountdown').innerText = "0.000s";
+                }
+                // Nếu chế độ đổi từ 1 sang 0, cho phép bấm lại
+                if (oldBuzzMode === 1 && buzzSingleMode === 0 && anyoneBuzzed && !hasBuzzed) {
+                    anyoneBuzzed = false;
+                    hasBuzzed = false;
+                    updateBuzzUI(false);
+                    await fetchBuzzList();
                 }
             } else {
                 updateBuzzUI(true);
