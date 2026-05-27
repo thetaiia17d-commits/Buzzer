@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
- 
+
 <head>
   <meta charset="UTF-8">
   <title>Host Panel</title>
@@ -369,7 +369,8 @@
 
   <h2>Bảng kết quả đáp án:</h2>
 
-  <button id="btnSetCorrect" style="background: purple; color: white; font-weight: bold; margin-bottom: 10px;">Nhập đáp án đúng</button>
+  <button id="btnSetCorrect" style="background: purple; color: white; font-weight: bold; margin-bottom: 10px;">Nhập đáp
+    án đúng</button>
   <div style="margin-bottom: 10px; font-weight: bold; color: black; display: flex; justify-content: center; gap: 30px;">
     <label style="cursor: pointer; font-weight: bold;">
       <input type="radio" name="sortOption" value="position" onchange="renderAnswers()"> Theo vị trí đứng
@@ -400,7 +401,8 @@
 
   <div id="buzzConfigPopup"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center;">
-    <div style="background: white; padding: 20px; border-radius: 10px; width: 400px; text-align: left; font-weight: bold;">
+    <div
+      style="background: white; padding: 20px; border-radius: 10px; width: 400px; text-align: left; font-weight: bold;">
       <h3 style="text-align: center;">Cấu hình chuông</h3>
       <hr>
 
@@ -414,7 +416,8 @@
         <strong></strong><label><input type="radio" name="mode2" value="1"> Tính tiếp thời gian còn lại</label></strong>
 
         <p><strong>Chế độ 3: Thời gian vĩnh viễn</strong></p>
-        <strong></strong><label><input type="radio" name="mode3" value="0" checked> Tính lại từ 0.000s</label><br></strong>
+        <strong></strong><label><input type="radio" name="mode3" value="0" checked> Tính lại từ
+          0.000s</label><br></strong>
         <strong></strong><label><input type="radio" name="mode3" value="1"> Tính tiếp từ người trước</label></strong>
       </div>
 
@@ -494,7 +497,8 @@
     <div class="popup-content">
       <h3>Nhập đáp án đúng</h3>
       <div class="popup-inputs">
-        <textarea id="correctAnswerInput" placeholder="Nhập đáp án đúng..." style="width: 100%; height: 100px; font-weight: bold; color: black;"></textarea>
+        <textarea id="correctAnswerInput" placeholder="Nhập đáp án đúng..."
+          style="width: 100%; height: 100px; font-weight: bold; color: black;"></textarea>
       </div>
       <div class="popup-buttons">
         <button id="btnSaveCorrect" style="background: green; color: white; font-weight: bold;">Lưu</button>
@@ -591,7 +595,7 @@
         localStorage.setItem('buzzer_answers', JSON.stringify(answers));
         localStorage.setItem('buzzer_participants', JSON.stringify(allParticipants));
         localStorage.setItem('buzzer_roomInfo', JSON.stringify(roomInfoData));
-      } catch (e) {}
+      } catch (e) { }
     }
 
     function updateBuzzConfigVisibility() {
@@ -624,7 +628,7 @@
         buzzSinglePausedRemaining = 0;
         buzzSinglePausedElapsed = 0;
       }
-      
+
       if (currentRoom) {
         isUpdatingBuzzConfig = true;
         await supabase.from('rooms').update({
@@ -633,7 +637,7 @@
           buzz_mode3: buzzPermanentMode3
         }).eq('room_code', currentRoom);
         isUpdatingBuzzConfig = false;
-        
+
         if (oldMode === 1 && buzzSingleMode === 0 && roomInfoData?.buzz_status === 'open') {
           const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
           await supabase.from('rooms').update({
@@ -641,7 +645,7 @@
           }).eq('room_code', currentRoom);
         }
       }
-      
+
       showPopup("Đã lưu cấu hình chuông!");
       const popup = document.getElementById("buzzConfigPopup");
       if (popup) popup.style.display = "none";
@@ -835,9 +839,24 @@
 
       displayData.forEach(item => {
         const row = tblAnswersBody.insertRow();
-        row.insertCell().innerText = item.name;
-        row.insertCell().innerText = item.answer_text;
-        row.insertCell().innerText = formatTimeDisplay(item.created_at, answerStartTime);
+        const cellName = row.insertCell();
+        const cellAnswer = row.insertCell();
+        const cellTime = row.insertCell();
+
+        cellName.innerText = item.name;
+        cellAnswer.innerText = item.answer_text;
+        // Host.html dùng .toFixed(3) + "s", Sub_Host.html dùng .toFixed(2)
+        // Hàm formatTimeDisplay của bạn đã tự xử lý logic này rồi
+        cellTime.innerText = formatTimeDisplay(item.created_at, answerStartTime);
+
+        // Kiểm tra và tô màu nếu trùng khớp đáp án đúng (không phân biệt hoa/thường và khoảng trắng 2 đầu)
+        if (roomInfoData && roomInfoData.correct_answer && roomInfoData.correct_answer.trim() !== "") {
+          if (item.answer_text.trim().toLowerCase() === roomInfoData.correct_answer.trim().toLowerCase()) {
+            cellName.style.cssText = "background: green !important; color: white !important; font-weight: bold !important;";
+            cellAnswer.style.cssText = "background: green !important; color: white !important; font-weight: bold !important;";
+            cellTime.style.cssText = "background: green !important; color: white !important; font-weight: bold !important;";
+          }
+        }
       });
     }
 
@@ -853,10 +872,10 @@
       if (!tblBuzzBody) return;
       tblBuzzBody.innerHTML = "";
 
-      const startTime = roomInfoData?.buzz_open_time 
-        ? new Date(roomInfoData.buzz_open_time).getTime() 
-        : (buzzOrder && buzzOrder.length > 0 
-          ? new Date(buzzOrder[0].press_time || buzzOrder[0].created_at).getTime() 
+      const startTime = roomInfoData?.buzz_open_time
+        ? new Date(roomInfoData.buzz_open_time).getTime()
+        : (buzzOrder && buzzOrder.length > 0
+          ? new Date(buzzOrder[0].press_time || buzzOrder[0].created_at).getTime()
           : 0);
 
       if (!buzzOrder || buzzOrder.length === 0) return;
@@ -1023,10 +1042,10 @@
         }, (payload) => {
           if (payload.new) {
             roomInfoData = payload.new;
-            
+
             if (payload.new.answer_open_time) answerStartTime = new Date(payload.new.answer_open_time).getTime();
             if (payload.new.buzz_open_time) buzzStartTime = new Date(payload.new.buzz_open_time).getTime();
-            
+
             if (payload.new.answer_reset_at !== lastAnswerResetAt) {
               lastAnswerResetAt = payload.new.answer_reset_at;
               answers = [];
@@ -1040,7 +1059,7 @@
               const newBuzzMode = payload.new.buzz_mode ?? 0;
               const newBuzzMode2 = payload.new.buzz_mode2 ?? 0;
               const newBuzzMode3 = payload.new.buzz_mode3 ?? 0;
-              
+
               if (newBuzzMode !== buzzSingleMode || newBuzzMode2 !== buzzLimitedMode2 || newBuzzMode3 !== buzzPermanentMode3) {
                 buzzSingleMode = newBuzzMode;
                 buzzLimitedMode2 = newBuzzMode2;
@@ -1048,7 +1067,7 @@
                 syncBuzzConfigUI();
               }
             }
-            
+
             updateUI();
             renderAnswers();
             renderBuzz();
@@ -1129,7 +1148,7 @@
         buzzSingleMode = data.buzz_mode ?? 0;
         buzzLimitedMode2 = data.buzz_mode2 ?? 0;
         buzzPermanentMode3 = data.buzz_mode3 ?? 0;
-        
+
         syncBuzzConfigUI();
         return data;
       }
@@ -1346,10 +1365,10 @@
       const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
       const { error } = await supabase.from('answers').delete().eq('room_code', currentRoom);
       if (!error) {
-          await supabase.from('rooms').update({ answer_reset_at: nowISO }).eq('room_code', currentRoom);
-          answers = [];
-          renderAnswers();
-          showPopup("Đã reset đáp án!");
+        await supabase.from('rooms').update({ answer_reset_at: nowISO }).eq('room_code', currentRoom);
+        answers = [];
+        renderAnswers();
+        showPopup("Đã reset đáp án!");
       }
     };
 
@@ -1412,6 +1431,13 @@
       radio.addEventListener('change', updateBuzzConfigVisibility);
     });
 
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('keydown', e => {
+      if (e.keyCode === 123) e.preventDefault();
+      if ((e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) || (e.ctrlKey && e.keyCode === 85)) {
+        e.preventDefault();
+      }
+    });
   </script>
 </body>
 
