@@ -241,7 +241,7 @@
         let lastBuzzResetAt = null;
         let currentAnswerStartTime = 0;
         let currentBuzzStartTime = 0;
-
+        let isBuzzOpen = false;
         let myBuzzId = null;
         let buzzSingleMode = 0;
         let anyoneBuzzed = false;
@@ -303,12 +303,18 @@
 
         function updateBuzzUI(shouldLock) {
             lockedBuzz = shouldLock;
-            if (!shouldLock && !hasBuzzed) {
+            
+            // CHỈNH SỬA: Phải kiểm tra thêm isBuzzOpen để tránh việc nút mở sáng lên khi Host đang khóa phòng
+            if (!shouldLock && !hasBuzzed && isBuzzOpen) {
                 btnBuzz.classList.remove("locked");
                 btnBuzz.innerText = "Bấm chuông";
             } else {
                 btnBuzz.classList.add("locked");
-                btnBuzz.innerText = hasBuzzed ? "Đã bấm chuông" : "Đang khóa";
+                if (hasBuzzed) {
+                    btnBuzz.innerText = "Đã bấm chuông";
+                } else {
+                    btnBuzz.innerText = "Đang khóa";
+                }
             }
         }
 
@@ -402,13 +408,18 @@
 
             if (error) {
                 hasBuzzed = false;
-                updateBuzzUI(lockedBuzz);
+                updateBuzzUI(false);
                 showPopup("Lỗi bấm chuông", true);
-            } else if (buzzSingleMode === 1) {
-                lockedBuzz = true;
-                updateBuzzUI(true);
-                anyoneBuzzed = true;
-                await supabase.from('rooms').update({ buzz_status: 'locked' }).eq('room_code', myRoom);
+            } else if (data && data.length > 0) {
+                // BỔ SUNG: Gán ID chuông để hệ thống nhận diện đúng khi Host xóa lẻ từng người
+                myBuzzId = data[0].id;
+                
+                if (buzzSingleMode === 1) {
+                    lockedBuzz = true;
+                    updateBuzzUI(true);
+                    anyoneBuzzed = true;
+                    await supabase.from('rooms').update({ buzz_status: 'locked' }).eq('room_code', myRoom);
+                }
             }
         };
 
@@ -447,21 +458,29 @@
                     table: 'buzzes',
                     filter: `room_code=eq.${myRoom}`
                 }, (payload) => {
+                    // 1. Luôn mở khóa rào cản "1 người bấm" cho toàn phòng khi có bất kỳ chuông nào bị xóa
+                    lockedBuzz = false;
+                    anyoneBuzzed = false;
+
+                    // 2. Nếu chuông bị xóa là của chính thí sinh này
                     if (payload.old && payload.old.id === myBuzzId) {
                         hasBuzzed = false;
                         myBuzzId = null;
-                        updateBuzzUI(lockedBuzz);
                     }
-                    else if (!payload.old || !payload.old.id) {
-                        hasBuzzed = false;
-                        myBuzzId = null;
-                        updateBuzzUI(lockedBuzz);
-                        showPopup("Host đã reset chuông!");
-                    }
+
+                    // 3. Cập nhật lại UI dựa vào biến isBuzzOpen hiện tại của phòng
+                    updateBuzzUI(false);
                 })
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, async () => {
-                    buzzSound.play().catch(e => {});
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buzzes', filter: `room_code=eq.${myRoom}` }, async (payload) => {
+                    // CHỈNH SỬA: Nếu đang ở chế độ 1 người bấm và trước đó ĐÃ CÓ người bấm rồi (lockedBuzz đã bật)
+                    // thì hủy bỏ toàn bộ tín hiệu của những người đến sau, không phát âm thanh chuông nữa.
+                    if (buzzSingleMode === 1 && lockedBuzz) {
+                        return;
+                    }
+
+                    buzzSound.play().catch(e => { });
                     anyoneBuzzed = true;
+
                     if (buzzSingleMode === 1) {
                         lockedBuzz = true;
                         updateBuzzUI(true);
@@ -521,7 +540,7 @@
                 document.getElementById('answerCountdown').innerText = "--.--s";
             }
 
-            const isBuzzOpen = (roomData.buzz_status === 'open');
+            isBuzzOpen = (roomData.buzz_status === 'open');
             if (isBuzzOpen && roomData.buzz_open_time) {
                 const startTime = new Date(roomData.buzz_open_time).getTime();
 
@@ -601,7 +620,13 @@
             this.value = this.value.toUpperCase();
         });
 
-        document.addEventListener("contextmenu", (e) => e.preventDefault());
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('keydown', e => {
+            if (e.keyCode === 123) e.preventDefault();
+            if ((e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) || (e.ctrlKey && e.keyCode === 85)) {
+                e.preventDefault();
+            }
+        });
     </script>
 </body>
 

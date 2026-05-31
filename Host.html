@@ -879,7 +879,7 @@
       if (!buzzOrder || buzzOrder.length === 0) return;
 
       const sortedBuzz = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      const displayBuzz = (buzzSingleMode === 1 && sortedBuzz.length > 0) ? [sortedBuzz[sortedBuzz.length - 1]] : sortedBuzz;
+      const displayBuzz = (buzzSingleMode === 1 && sortedBuzz.length > 0) ? [sortedBuzz[0]] : sortedBuzz;
 
       displayBuzz.forEach((item) => {
         const row = tblBuzzBody.insertRow();
@@ -1099,6 +1099,10 @@
         }, (payload) => {
           if (payload.eventType === 'INSERT') {
             buzzOrder.push(payload.new);
+            buzzOrder.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            if (buzzSingleMode === 1 && buzzOrder.length > 0) {
+                buzzOrder = [buzzOrder[0]]; // Hủy vĩnh viễn dữ liệu rác đến sau
+            }
             handleFirstSingleBuzz();
           } else if (payload.eventType === 'DELETE') {
             buzzOrder = buzzOrder.filter(b => b.id !== payload.old.id);
@@ -1167,7 +1171,16 @@
       const [answersResult, buzzesResult, participantsResult] = await Promise.all([answersPromise, buzzesPromise, participantsPromise]);
 
       if (answersResult.data) answers = answersResult.data;
-      if (buzzesResult.data) buzzOrder = buzzesResult.data;
+      if (buzzesResult.data) {
+          // --- BỔ SUNG LỌC KHI TẢI LẠI TRANG ---
+          let sortedData = [...buzzesResult.data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          if (buzzSingleMode === 1 && sortedData.length > 0) {
+              buzzOrder = [sortedData[0]];
+          } else {
+              buzzOrder = sortedData;
+          }
+          // -------------------------------------
+      }
       if (participantsResult.data) allParticipants = participantsResult.data;
 
       answerStartTime = new Date(roomInfoData?.answer_open_time || 0).getTime();

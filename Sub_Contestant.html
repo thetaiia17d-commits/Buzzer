@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
- 
+
 <head>
     <meta charset="UTF-8">
     <title>Thí sinh</title>
@@ -251,7 +251,7 @@
             style="width: 250px; font-weight: bold;">
         <button id="btnJoin">Xác nhận vào phòng</button>
     </div>
- 
+
     <div id="gameArea">
         <div class="timer-container">
             <div class="timer-info">Đáp án: <span id="answerCountdown" class="timer-countdown">--.--s</span></div>
@@ -309,7 +309,7 @@
         let buzzSingleMode = 0;
         let anyoneBuzzed = false;
         let isResettingBuzz = false;
-
+        let isBuzzOpen = false;
         let myBuzzId = null;
         let localAnswerReceiveTime = 0;
         let localBuzzReceiveTime = 0;
@@ -389,7 +389,9 @@
 
         function updateBuzzUI(shouldLock) {
             lockedBuzz = shouldLock;
-            if (!shouldLock && !hasBuzzed) {
+            
+            // CHỈNH SỬA: Phải kiểm tra thêm isBuzzOpen để tránh việc nút mở sáng lên khi Host đang khóa phòng
+            if (!shouldLock && !hasBuzzed && isBuzzOpen) {
                 btnBuzz.classList.remove("locked");
                 btnBuzz.innerText = "Bấm chuông";
             } else {
@@ -411,20 +413,20 @@
 
             displayBuzz.forEach(item => {
                 const row = tblBuzzBody.insertRow();
-                
+
                 const serverReceived = new Date(item.created_at).getTime();
                 const clientPressed = new Date(item.press_time || item.created_at).getTime();
-                
+
                 const pressDiff = clientPressed - currentBuzzStartTime;
                 const latency = serverReceived - clientPressed;
                 const totalDiff = serverReceived - currentBuzzStartTime;
 
                 const cellName = row.insertCell(0);
                 cellName.innerText = item.name;
-                
+
                 row.insertCell(1).innerText = (pressDiff / 1000).toFixed(3) + "s";
                 row.insertCell(2).innerText = latency + "ms";
-                
+
                 const cellTotal = row.insertCell(3);
                 cellTotal.innerText = (totalDiff / 1000).toFixed(3) + "s";
 
@@ -446,13 +448,25 @@
 
         async function fetchBuzzList() {
             const { data } = await supabase.from('buzzes').select('*').eq('room_code', myRoom);
-            if (data) {
-                buzzOrder = data;
-                if (data.some(b => b.name === myName)) {
+            if (data && data.length > 0) {
+                // 1. Sắp xếp toàn bộ dữ liệu nhận được theo thời gian server cấp (từ sớm nhất đến muộn nhất)
+                const sortedData = [...data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+                // 2. CHỈNH SỬA: Nếu ở chế độ 1 người bấm, chỉ lấy người đầu tiên, hủy/bỏ qua những người sau
+                if (buzzSingleMode === 1) {
+                    buzzOrder = [sortedData[0]]; // Ép mảng chỉ có đúng 1 người nhanh nhất
+                    lockedBuzz = true;           // Khóa trạng thái chuông chuông
+                } else {
+                    buzzOrder = sortedData;
+                }
+
+                // Kiểm tra xem chính mình có phải là người bấm hợp lệ (hoặc người đầu tiên trong chế độ single) không
+                if (buzzOrder.some(b => b.name === myName)) {
                     hasBuzzed = true;
                 } else {
                     hasBuzzed = false;
                 }
+
                 updateBuzzUI(lockedBuzz);
                 renderBuzzTable();
             } else {
@@ -594,12 +608,14 @@
             const { data, error } = await supabase.from('buzzes').insert([{
                 room_code: myRoom,
                 name: myName,
-                press_time: pressTimeISO 
+                press_time: pressTimeISO
             }]).select();
 
             if (error) {
                 hasBuzzed = false;
-                btnBuzz.classList.remove("locked");
+                // CHỈNH SỬA: Gọi updateBuzzUI(false) để đồng bộ cả biến logic lẫn giao diện, thêm popup báo lỗi
+                updateBuzzUI(false);
+                showPopup("Lỗi bấm chuông", "error");
             } else if (data && data.length > 0) {
                 myBuzzId = data[0].id;
                 if (buzzSingleMode === 1) {
@@ -632,27 +648,21 @@
                     table: 'buzzes',
                     filter: `room_code=eq.${myRoom}`
                 }, (payload) => {
-                    if (payload.old && payload.old.id && myBuzzId && payload.old.id === myBuzzId) {
+                    // 1. Luôn mở khóa rào cản "1 người bấm" cho toàn phòng
+                    lockedBuzz = false;
+                    anyoneBuzzed = false;
+
+                    // 2. Nếu chuông bị xóa là của chính thí sinh này
+                    if (payload.old && payload.old.id === myBuzzId) {
                         hasBuzzed = false;
                         myBuzzId = null;
-                        updateBuzzUI(lockedBuzz); 
-                    }
-                    
-                    if (!payload.old || !payload.old.id) {
-                        if (isResettingBuzz) {
-                            hasBuzzed = false;
-                            myBuzzId = null;
-                            updateBuzzUI(lockedBuzz);
-                            showPopup("Host đã reset chuông!");
-                        }
                     }
 
+                    // 3. Kéo lại danh sách mới nhất hoặc nhả nút bấm
                     if (typeof fetchBuzzList === "function") {
-                        fetchBuzzList();
+                        fetchBuzzList(); // Trong fetchBuzzList đã gọi updateBuzzUI và renderBuzzTable
                     } else {
-                        if (isResettingBuzz) {
-                            buzzOrder = [];
-                        }
+                        if (typeof updateBuzzUI === "function") updateBuzzUI(false);
                         if (typeof renderBuzzTable === "function") renderBuzzTable();
                     }
                 })
@@ -664,9 +674,16 @@
                     schema: 'public',
                     table: 'buzzes',
                     filter: `room_code=eq.${myRoom}`
-                }, () => {
-                    if (typeof fetchBuzzList === "function") fetchBuzzList();
-                    buzzSound.play().catch(e => {});
+                }, async (payload) => {
+                    // Nếu ở chế độ 1 người bấm và hiện tại hệ thống đã hiển thị người thắng cuộc rồi, 
+                    // thì bỏ qua hoàn toàn các tín hiệu INSERT đến sau (không fetch lại, không re-render, không phát tiếng kêu)
+                    if (buzzSingleMode === 1 && buzzOrder && buzzOrder.length > 0) {
+                        return;
+                    }
+
+                    if (typeof fetchBuzzList === "function") await fetchBuzzList();
+                    buzzSound.play().catch(e => { });
+
                     if (buzzSingleMode === 1) {
                         lockedBuzz = true;
                         updateBuzzUI(true);
@@ -679,7 +696,7 @@
             if (!roomData) return;
 
             const oldBuzzMode = buzzSingleMode;
-            
+
             if (roomData.buzz_mode !== undefined && roomData.buzz_mode !== null) {
                 buzzSingleMode = parseInt(roomData.buzz_mode);
             }
@@ -694,8 +711,14 @@
             if (roomData.buzz_reset_at &&
                 roomData.buzz_reset_at !== lastBuzzResetAt) {
                 lastBuzzResetAt = roomData.buzz_reset_at;
+                
+                // Đồng bộ hóa việc nhả khóa và reset biến giống hệt Contestant.html
                 hasBuzzed = false;
                 anyoneBuzzed = false;
+                currentBuzzStartTime = 0;
+                lockedBuzz = false;
+                updateBuzzUI(false);
+                
                 buzzOrder = [];
                 renderBuzzTable();
                 showPopup("Chuông đã được Reset!");
@@ -734,7 +757,7 @@
                 document.getElementById('answerCountdown').innerText = "--.--s";
             }
 
-            const isBuzzOpen = (roomData.buzz_status === 'open');
+            isBuzzOpen = (roomData.buzz_status === 'open');
             const buzzOpenTimeISO = roomData.buzz_open_time;
             const newBuzzStartTime = buzzOpenTimeISO ? new Date(buzzOpenTimeISO).getTime() : 0;
 
@@ -798,7 +821,13 @@
         answerInput.addEventListener('input', function () {
             this.value = this.value.toUpperCase();
         });
-        document.addEventListener("contextmenu", (e) => e.preventDefault());
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('keydown', e => {
+            if (e.keyCode === 123) e.preventDefault();
+            if ((e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) || (e.ctrlKey && e.keyCode === 85)) {
+                e.preventDefault();
+            }
+        });
     </script>
 </body>
 
