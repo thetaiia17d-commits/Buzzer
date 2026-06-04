@@ -1105,6 +1105,8 @@
             if (buzzSingleMode === 1 && buzzOrder.length > 0) {
                 buzzOrder = [buzzOrder[0]]; // Hủy vĩnh viễn dữ liệu rác đến sau
             }
+            // Phát âm thanh chuông khi nhận được tín hiệu
+            buzzSound.play().catch(e => { });
             handleFirstSingleBuzz();
           } else if (payload.eventType === 'DELETE') {
             buzzOrder = buzzOrder.filter(b => b.id !== payload.old.id);

@@ -618,6 +618,10 @@
                 showPopup("Lỗi bấm chuông", "error");
             } else if (data && data.length > 0) {
                 myBuzzId = data[0].id;
+                
+                // Phát âm thanh chuông ngay lập tức khi bấm nút
+                buzzSound.play().catch(e => { });
+                
                 if (buzzSingleMode === 1) {
                     lockedBuzz = true;
                     updateBuzzUI(true);

@@ -414,6 +414,9 @@
                 // BỔ SUNG: Gán ID chuông để hệ thống nhận diện đúng khi Host xóa lẻ từng người
                 myBuzzId = data[0].id;
                 
+                // Phát âm thanh chuông ngay lập tức khi bấm nút
+                buzzSound.play().catch(e => { });
+                
                 if (buzzSingleMode === 1) {
                     lockedBuzz = true;
                     updateBuzzUI(true);
