@@ -329,6 +329,17 @@
         const tblBuzzBody = document.querySelector("#tblBuzz tbody");
         const buzzSound = new Audio("buzzer.mp3");
 
+        function safeParseUTC(dateStr) {
+            if (!dateStr) return 0;
+            let s = String(dateStr).trim();
+            s = s.replace(' ', 'T');
+            if (!s.endsWith('Z') && !s.includes('+') && !s.match(/-\d{2}:\d{2}$/)) {
+                s += 'Z';
+            }
+            const t = new Date(s).getTime();
+            return isNaN(t) ? 0 : t;
+        }
+
         function showPopup(msg, type = "success") {
             const p = document.getElementById("popupMessage");
             p.innerText = msg;
@@ -344,23 +355,57 @@
         function getServerTimeNow() { return Date.now() + serverTimeOffset; }
 
         async function syncServerTime() {
-            if (!myRoom) return;
-            const tempName = "SYNC_" + Math.random().toString(36).substring(7);
-            const t0 = Date.now();
-            const { data } = await supabase.from('participants').insert([{ room_code: myRoom, name: tempName, role: 'contestant' }]).select().maybeSingle();
-            const t1 = Date.now();
-            if (data) {
-                const serverTs = new Date(data.created_at).getTime();
-                const rtt = t1 - t0;
-                const estimatedLocalAtServerTs = t0 + Math.round(rtt / 2);
-                serverTimeOffset = serverTs - estimatedLocalAtServerTs;
-                await supabase.from('participants').delete().eq('id', data.id);
+            const roomCode = myRoom;
+            if (!roomCode) return;
+            
+            let bestOffset = null;
+            let minRtt = Infinity;
+            
+            // Thực hiện đo 3 lần liên tiếp để tìm RTT thấp nhất, triệt tiêu sai số do mạng và DB xử lý
+            for (let i = 0; i < 3; i++) {
+                const tempName = "SYNC_TIME_" + Math.random().toString(36).substring(7);
+                const t0 = Date.now();
+                try {
+                    const { data, error } = await supabase.from('participants')
+                        .insert([{ room_code: roomCode, name: tempName, role: 'contestant' }])
+                        .select()
+                        .maybeSingle();
+                    const t1 = Date.now();
+                    
+                    if (data && !error) {
+                        const serverTs = safeParseUTC(data.created_at);
+                        const rtt = t1 - t0;
+                        if (rtt < minRtt) {
+                            minRtt = rtt;
+                            const estimatedLocalAtServerTs = t0 + Math.round(rtt / 2);
+                            bestOffset = serverTs - estimatedLocalAtServerTs;
+                        }
+                        // Xóa bản ghi rác ngay lập tức
+                        await supabase.from('participants').delete().eq('id', data.id);
+                    }
+                } catch (e) {
+                    console.error("Đo đồng bộ thời gian lỗi lần " + (i + 1), e);
+                }
+                // Chờ nhẹ 50ms giữa các lần đo để tránh nghẽn
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            
+            if (bestOffset !== null) {
+                serverTimeOffset = bestOffset;
+                console.log("Đồng bộ thời gian thành công! Offset:", serverTimeOffset, "RTT:", minRtt, "ms");
             }
         }
 
+        // Chạy đồng bộ thời gian liên tục mỗi 25 giây khi đã vào phòng
+        setInterval(async () => {
+            if (myRoom) {
+                await syncServerTime();
+            }
+        }, 25000);
+
         function formatTimeDisplay(isoDate, startTimeMs) {
             if (!startTimeMs || !isoDate) return "0.000s";
-            const ts = new Date(isoDate).getTime();
+            const ts = safeParseUTC(isoDate);
             let diff = ts - startTimeMs;
             if (diff < 0) diff = 0;
             return (diff / 1000).toFixed(3) + "s";
@@ -390,7 +435,6 @@
         function updateBuzzUI(shouldLock) {
             lockedBuzz = shouldLock;
             
-            // CHỈNH SỬA: Phải kiểm tra thêm isBuzzOpen để tránh việc nút mở sáng lên khi Host đang khóa phòng
             if (!shouldLock && !hasBuzzed && isBuzzOpen) {
                 btnBuzz.classList.remove("locked");
                 btnBuzz.innerText = "Bấm chuông";
@@ -408,14 +452,14 @@
             tblBuzzBody.innerHTML = "";
             if (!buzzOrder || buzzOrder.length === 0) return;
 
-            const sorted = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            const sorted = [...buzzOrder].sort((a, b) => safeParseUTC(a.created_at) - safeParseUTC(b.created_at));
             const displayBuzz = (buzzSingleMode === 1 && sorted.length > 0) ? [sorted[0]] : sorted;
 
             displayBuzz.forEach(item => {
                 const row = tblBuzzBody.insertRow();
 
-                const serverReceived = new Date(item.created_at).getTime();
-                const clientPressed = new Date(item.press_time || item.created_at).getTime();
+                const serverReceived = safeParseUTC(item.created_at);
+                const clientPressed = safeParseUTC(item.press_time || item.created_at);
 
                 const pressDiff = clientPressed - currentBuzzStartTime;
                 const latency = serverReceived - clientPressed;
@@ -449,18 +493,15 @@
         async function fetchBuzzList() {
             const { data } = await supabase.from('buzzes').select('*').eq('room_code', myRoom);
             if (data && data.length > 0) {
-                // 1. Sắp xếp toàn bộ dữ liệu nhận được theo thời gian server cấp (từ sớm nhất đến muộn nhất)
-                const sortedData = [...data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                const sortedData = [...data].sort((a, b) => safeParseUTC(a.created_at) - safeParseUTC(b.created_at));
 
-                // 2. CHỈNH SỬA: Nếu ở chế độ 1 người bấm, chỉ lấy người đầu tiên, hủy/bỏ qua những người sau
                 if (buzzSingleMode === 1) {
-                    buzzOrder = [sortedData[0]]; // Ép mảng chỉ có đúng 1 người nhanh nhất
-                    lockedBuzz = true;           // Khóa trạng thái chuông chuông
+                    buzzOrder = [sortedData[0]];
+                    lockedBuzz = true;
                 } else {
                     buzzOrder = sortedData;
                 }
 
-                // Kiểm tra xem chính mình có phải là người bấm hợp lệ (hoặc người đầu tiên trong chế độ single) không
                 if (buzzOrder.some(b => b.name === myName)) {
                     hasBuzzed = true;
                 } else {
@@ -580,14 +621,13 @@
             if (!text) { answerInput.focus(); return showPopup("Chưa nhập đáp án!", "error"); }
             btnSend.disabled = true;
 
-            const finalISO = new Date(Date.now() + serverTimeOffset).toISOString();
+            const { data, error } = await supabase.from('answers').insert([
+                { room_code: myRoom, name: myName, answer_text: text }
+            ]).select();
 
-            const { error } = await supabase.from('answers').insert([
-                { room_code: myRoom, name: myName, answer_text: text, created_at: finalISO }
-            ]);
-
-            if (!error) {
-                const timeDiff = formatTimeDisplay(finalISO, currentAnswerStartTime);
+            if (!error && data && data.length > 0) {
+                const serverCreatedAt = data[0].created_at;
+                const timeDiff = formatTimeDisplay(serverCreatedAt, currentAnswerStartTime);
                 answerStatusBox.innerText = `Bạn đã trả lời "${text}" ở ${timeDiff}`;
                 answerInput.value = ""; showPopup("Đã gửi đáp án!");
                 setTimeout(() => { if (!lockedAnswer) btnSend.disabled = false; }, 500);
@@ -613,13 +653,11 @@
 
             if (error) {
                 hasBuzzed = false;
-                // CHỈNH SỬA: Gọi updateBuzzUI(false) để đồng bộ cả biến logic lẫn giao diện, thêm popup báo lỗi
                 updateBuzzUI(false);
                 showPopup("Lỗi bấm chuông", "error");
             } else if (data && data.length > 0) {
                 myBuzzId = data[0].id;
                 
-                // Phát âm thanh chuông ngay lập tức khi bấm nút
                 buzzSound.play().catch(e => { });
                 
                 if (buzzSingleMode === 1) {
@@ -652,19 +690,16 @@
                     table: 'buzzes',
                     filter: `room_code=eq.${myRoom}`
                 }, (payload) => {
-                    // 1. Luôn mở khóa rào cản "1 người bấm" cho toàn phòng
                     lockedBuzz = false;
                     anyoneBuzzed = false;
 
-                    // 2. Nếu chuông bị xóa là của chính thí sinh này
                     if (payload.old && payload.old.id === myBuzzId) {
                         hasBuzzed = false;
                         myBuzzId = null;
                     }
 
-                    // 3. Kéo lại danh sách mới nhất hoặc nhả nút bấm
                     if (typeof fetchBuzzList === "function") {
-                        fetchBuzzList(); // Trong fetchBuzzList đã gọi updateBuzzUI và renderBuzzTable
+                        fetchBuzzList();
                     } else {
                         if (typeof updateBuzzUI === "function") updateBuzzUI(false);
                         if (typeof renderBuzzTable === "function") renderBuzzTable();
@@ -679,8 +714,6 @@
                     table: 'buzzes',
                     filter: `room_code=eq.${myRoom}`
                 }, async (payload) => {
-                    // Nếu ở chế độ 1 người bấm và hiện tại hệ thống đã hiển thị người thắng cuộc rồi, 
-                    // thì bỏ qua hoàn toàn các tín hiệu INSERT đến sau (không fetch lại, không re-render, không phát tiếng kêu)
                     if (buzzSingleMode === 1 && buzzOrder && buzzOrder.length > 0) {
                         return;
                     }
@@ -716,7 +749,6 @@
                 roomData.buzz_reset_at !== lastBuzzResetAt) {
                 lastBuzzResetAt = roomData.buzz_reset_at;
                 
-                // Đồng bộ hóa việc nhả khóa và reset biến giống hệt Contestant.html
                 hasBuzzed = false;
                 anyoneBuzzed = false;
                 currentBuzzStartTime = 0;
@@ -730,7 +762,7 @@
 
             const isAnswerOpen = (roomData.answer_status === 'open');
             const answerOpenTimeISO = roomData.answer_open_time;
-            const newAnswerStartTime = answerOpenTimeISO ? new Date(answerOpenTimeISO).getTime() : 0;
+            const newAnswerStartTime = answerOpenTimeISO ? safeParseUTC(answerOpenTimeISO) : 0;
 
             if (isAnswerOpen && answerOpenTimeISO) {
                 if (currentAnswerStartTime !== newAnswerStartTime) {
@@ -763,7 +795,7 @@
 
             isBuzzOpen = (roomData.buzz_status === 'open');
             const buzzOpenTimeISO = roomData.buzz_open_time;
-            const newBuzzStartTime = buzzOpenTimeISO ? new Date(buzzOpenTimeISO).getTime() : 0;
+            const newBuzzStartTime = buzzOpenTimeISO ? safeParseUTC(buzzOpenTimeISO) : 0;
 
             if (isBuzzOpen && buzzOpenTimeISO) {
                 if (currentBuzzStartTime !== newBuzzStartTime) {

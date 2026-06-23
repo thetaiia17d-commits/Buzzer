@@ -557,6 +557,18 @@
     let isUpdatingBuzzConfig = false;
 
     const buzzSound = new Audio("buzzer.mp3");
+
+    function safeParseUTC(dateStr) {
+      if (!dateStr) return 0;
+      let s = String(dateStr).trim();
+      s = s.replace(' ', 'T');
+      if (!s.endsWith('Z') && !s.includes('+') && !s.match(/-\d{2}:\d{2}$/)) {
+        s += 'Z';
+      }
+      const t = new Date(s).getTime();
+      return isNaN(t) ? 0 : t;
+    }
+
     function showPopup(message, type = "success") {
       const popup = document.getElementById("popupMessage");
       if (!popup) return;
@@ -579,7 +591,7 @@
     function formatTimeDisplay(isoDate, startTime) {
       if (!isoDate) return "0.000s";
       const startMs = startTime || 0;
-      const ts = new Date(isoDate).getTime();
+      const ts = safeParseUTC(isoDate);
       let diff = ts - startMs;
       if (diff < 0) diff = 0;
       return (diff / 1000).toFixed(2);
@@ -666,20 +678,20 @@
 
     async function openBuzzBasedOnConfig(isPermanent) {
       if (!currentRoom) return;
-      const nowISO = new Date(Date.now() + serverTimeOffset).toISOString();
       const fullDuration = isPermanent ? 0 : parseFloat(buzzDurationInput.value);
-      let openTimeISO = nowISO;
+      const nowMs = Date.now() + serverTimeOffset;
+      let openTimeISO = new Date(nowMs).toISOString();
       let durationValue = fullDuration;
 
       if (buzzSingleMode === 1 && buzzSinglePaused) {
         if (!isPermanent) {
           if (buzzLimitedMode2 === 1 && buzzSinglePausedRemaining > 0) {
             const offsetMs = fullDuration * 1000 - buzzSinglePausedRemaining;
-            openTimeISO = new Date(Date.now() + serverTimeOffset - offsetMs).toISOString();
+            openTimeISO = new Date(nowMs - offsetMs).toISOString();
           }
         } else {
           if (buzzPermanentMode3 === 1) {
-            openTimeISO = new Date(Date.now() + serverTimeOffset - buzzSinglePausedElapsed).toISOString();
+            openTimeISO = new Date(nowMs - buzzSinglePausedElapsed).toISOString();
           }
         }
       }
@@ -697,21 +709,51 @@
     }
 
     async function syncServerTime() {
-      if (!currentRoom) return;
-      const tempName = "SYNC_" + Math.random().toString(36).substring(7);
-      const t0 = Date.now();
-      const { data } = await supabase.from('participants')
-        .insert([{ room_code: currentRoom, name: tempName, role: 'contestant' }])
-        .select().maybeSingle();
-      const t1 = Date.now();
-      if (data) {
-        const serverTs = new Date(data.created_at).getTime();
-        const rtt = t1 - t0;
-        const estimatedLocalAtServerTs = t0 + Math.round(rtt / 2);
-        serverTimeOffset = serverTs - estimatedLocalAtServerTs;
-        await supabase.from('participants').delete().eq('id', data.id);
+      const roomCode = currentRoom;
+      if (!roomCode) return;
+      
+      let bestOffset = null;
+      let minRtt = Infinity;
+      
+      // Đo 3 lần liên tiếp để lấy RTT tối ưu
+      for (let i = 0; i < 3; i++) {
+        const tempName = "SYNC_TIME_" + Math.random().toString(36).substring(7);
+        const t0 = Date.now();
+        try {
+          const { data, error } = await supabase.from('participants')
+            .insert([{ room_code: roomCode, name: tempName, role: 'contestant' }])
+            .select()
+            .maybeSingle();
+          const t1 = Date.now();
+          
+          if (data && !error) {
+            const serverTs = safeParseUTC(data.created_at);
+            const rtt = t1 - t0;
+            if (rtt < minRtt) {
+              minRtt = rtt;
+              const estimatedLocalAtServerTs = t0 + Math.round(rtt / 2);
+              bestOffset = serverTs - estimatedLocalAtServerTs;
+            }
+            await supabase.from('participants').delete().eq('id', data.id);
+          }
+        } catch (e) {
+          console.error("Lỗi đo đồng bộ Host: ", e);
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      
+      if (bestOffset !== null) {
+        serverTimeOffset = bestOffset;
+        console.log("Host đồng bộ thời gian thành công! Offset:", serverTimeOffset, "RTT:", minRtt, "ms");
       }
     }
+
+    // Chạy đồng bộ định kỳ mỗi 25 giây cho Host
+    setInterval(async () => {
+      if (currentRoom) {
+        await syncServerTime();
+      }
+    }, 25000);
 
     async function autoLockRoomStatus(isAnswer) {
       if (!currentRoom) return;
@@ -731,7 +773,7 @@
 
       buzzDurationLimit = roomInfoData.buzz_duration || 0;
       if (roomInfoData.buzz_open_time && buzzDurationLimit > 0) {
-        buzzEndTime = new Date(roomInfoData.buzz_open_time).getTime() + (buzzDurationLimit * 1000);
+        buzzEndTime = safeParseUTC(roomInfoData.buzz_open_time) + (buzzDurationLimit * 1000);
       } else {
         buzzEndTime = 0;
       }
@@ -739,7 +781,7 @@
 
       answerDurationLimit = roomInfoData.answer_duration || 0;
       if (roomInfoData.answer_open_time && answerDurationLimit > 0) {
-        answerEndTime = new Date(roomInfoData.answer_open_time).getTime() + (answerDurationLimit * 1000);
+        answerEndTime = safeParseUTC(roomInfoData.answer_open_time) + (answerDurationLimit * 1000);
       } else {
         answerEndTime = 0;
       }
@@ -812,12 +854,12 @@
       const latestAnswersMap = new Map();
       answers.forEach(item => {
         const existing = latestAnswersMap.get(item.name);
-        if (!existing || new Date(item.created_at) > new Date(existing.created_at)) latestAnswersMap.set(item.name, item);
+        if (!existing || safeParseUTC(item.created_at) > safeParseUTC(existing.created_at)) latestAnswersMap.set(item.name, item);
       });
       let displayData = Array.from(latestAnswersMap.values());
 
       if (sortOption === "time") {
-        displayData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        displayData.sort((a, b) => safeParseUTC(a.created_at) - safeParseUTC(b.created_at));
       } else if (sortOption === "position") {
         const posMap = {};
         allParticipants.forEach(p => posMap[p.name] = p.position);
@@ -845,11 +887,8 @@
 
         cellName.innerText = item.name;
         cellAnswer.innerText = item.answer_text;
-        // Host.html dùng .toFixed(3) + "s", Sub_Host.html dùng .toFixed(2)
-        // Hàm formatTimeDisplay của bạn đã tự xử lý logic này rồi
         cellTime.innerText = formatTimeDisplay(item.created_at, answerStartTime);
 
-        // Kiểm tra và tô màu nếu trùng khớp đáp án đúng (không phân biệt hoa/thường và khoảng trắng 2 đầu)
         if (roomInfoData && roomInfoData.correct_answer && roomInfoData.correct_answer.trim() !== "") {
           if (item.answer_text.trim().toLowerCase() === roomInfoData.correct_answer.trim().toLowerCase()) {
             cellName.style.cssText = "background: green !important; color: white !important; font-weight: bold !important;";
@@ -873,21 +912,21 @@
       tblBuzzBody.innerHTML = "";
 
       const startTime = roomInfoData?.buzz_open_time
-        ? new Date(roomInfoData.buzz_open_time).getTime()
+        ? safeParseUTC(roomInfoData.buzz_open_time)
         : (buzzOrder && buzzOrder.length > 0
-          ? new Date(buzzOrder[0].press_time || buzzOrder[0].created_at).getTime()
+          ? safeParseUTC(buzzOrder[0].press_time || buzzOrder[0].created_at)
           : 0);
 
       if (!buzzOrder || buzzOrder.length === 0) return;
 
-      const sortedBuzz = [...buzzOrder].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const sortedBuzz = [...buzzOrder].sort((a, b) => safeParseUTC(a.created_at) - safeParseUTC(b.created_at));
       const displayBuzz = (buzzSingleMode === 1 && sortedBuzz.length > 0) ? [sortedBuzz[0]] : sortedBuzz;
 
       displayBuzz.forEach((item) => {
         const row = tblBuzzBody.insertRow();
 
-        const serverReceived = new Date(item.created_at).getTime();
-        const clientPressed = new Date(item.press_time || item.created_at).getTime();
+        const serverReceived = safeParseUTC(item.created_at);
+        const clientPressed = safeParseUTC(item.press_time || item.created_at);
 
         const pressDiff = clientPressed - startTime;
         const latency = serverReceived - clientPressed;
@@ -1008,7 +1047,7 @@
           timeInSeconds = parseFloat(row.querySelector(".add-buzz-time").value);
           if (isNaN(timeInSeconds)) return showPopup("Thiếu dữ liệu bổ sung!", "error");
           const isLimited = row.querySelector(".add-time-limited-checkbox").checked;
-          const pressTime = new Date(new Date(roomInfoData.buzz_open_time).getTime() + timeInSeconds * 1000).toISOString();
+          const pressTime = new Date(safeParseUTC(roomInfoData.buzz_open_time) + timeInSeconds * 1000).toISOString();
           recordsToInsert.push({ room_code: currentRoom, name, press_time: pressTime, is_limited: isLimited });
         }
       }
@@ -1043,8 +1082,8 @@
           if (payload.new) {
             roomInfoData = payload.new;
 
-            if (payload.new.answer_open_time) answerStartTime = new Date(payload.new.answer_open_time).getTime();
-            if (payload.new.buzz_open_time) buzzStartTime = new Date(payload.new.buzz_open_time).getTime();
+            if (payload.new.answer_open_time) answerStartTime = safeParseUTC(payload.new.answer_open_time);
+            if (payload.new.buzz_open_time) buzzStartTime = safeParseUTC(payload.new.buzz_open_time);
 
             if (payload.new.answer_reset_at !== lastAnswerResetAt) {
               lastAnswerResetAt = payload.new.answer_reset_at;
@@ -1101,11 +1140,10 @@
         }, (payload) => {
           if (payload.eventType === 'INSERT') {
             buzzOrder.push(payload.new);
-            buzzOrder.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            buzzOrder.sort((a, b) => safeParseUTC(a.created_at) - safeParseUTC(b.created_at));
             if (buzzSingleMode === 1 && buzzOrder.length > 0) {
-                buzzOrder = [buzzOrder[0]]; // Hủy vĩnh viễn dữ liệu rác đến sau
+                buzzOrder = [buzzOrder[0]];
             }
-            // Phát âm thanh chuông khi nhận được tín hiệu
             buzzSound.play().catch(e => { });
             handleFirstSingleBuzz();
           } else if (payload.eventType === 'DELETE') {
@@ -1123,6 +1161,10 @@
           table: 'participants',
           filter: `room_code=eq.${roomCode}`
         }, (payload) => {
+          // Lọc các bản ghi rác của chức năng đồng bộ hóa thời gian
+          if (payload.new && payload.new.name && payload.new.name.startsWith("SYNC_TIME_")) return;
+          if (payload.old && payload.old.name && payload.old.name.startsWith("SYNC_TIME_")) return;
+
           if (payload.eventType === 'INSERT') {
             allParticipants.push(payload.new);
           } else if (payload.eventType === 'UPDATE') {
@@ -1176,19 +1218,20 @@
 
       if (answersResult.data) answers = answersResult.data;
       if (buzzesResult.data) {
-          // --- BỔ SUNG LỌC KHI TẢI LẠI TRANG ---
-          let sortedData = [...buzzesResult.data].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          let sortedData = [...buzzesResult.data].sort((a, b) => safeParseUTC(a.created_at) - safeParseUTC(b.created_at));
           if (buzzSingleMode === 1 && sortedData.length > 0) {
               buzzOrder = [sortedData[0]];
           } else {
               buzzOrder = sortedData;
           }
-          // -------------------------------------
       }
-      if (participantsResult.data) allParticipants = participantsResult.data;
+      if (participantsResult.data) {
+          // Lọc bỏ bản ghi sync_time rác nếu còn tồn đọng trong database
+          allParticipants = (participantsResult.data || []).filter(p => !(p.name && p.name.startsWith("SYNC_TIME_")));
+      }
 
-      answerStartTime = new Date(roomInfoData?.answer_open_time || 0).getTime();
-      buzzStartTime = new Date(roomInfoData?.buzz_open_time || 0).getTime();
+      answerStartTime = safeParseUTC(roomInfoData?.answer_open_time || 0);
+      buzzStartTime = safeParseUTC(roomInfoData?.buzz_open_time || 0);
 
       renderAnswers();
       renderBuzz();
