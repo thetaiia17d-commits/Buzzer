@@ -361,7 +361,6 @@
             let bestOffset = null;
             let minRtt = Infinity;
             
-            // Thực hiện đo 3 lần liên tiếp để tìm RTT thấp nhất, triệt tiêu sai số do mạng và DB xử lý
             for (let i = 0; i < 3; i++) {
                 const tempName = "SYNC_TIME_" + Math.random().toString(36).substring(7);
                 const t0 = Date.now();
@@ -380,13 +379,11 @@
                             const estimatedLocalAtServerTs = t0 + Math.round(rtt / 2);
                             bestOffset = serverTs - estimatedLocalAtServerTs;
                         }
-                        // Xóa bản ghi rác ngay lập tức
                         await supabase.from('participants').delete().eq('id', data.id);
                     }
                 } catch (e) {
                     console.error("Đo đồng bộ thời gian lỗi lần " + (i + 1), e);
                 }
-                // Chờ nhẹ 50ms giữa các lần đo để tránh nghẽn
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
             
@@ -396,7 +393,6 @@
             }
         }
 
-        // Chạy đồng bộ thời gian liên tục mỗi 25 giây khi đã vào phòng
         setInterval(async () => {
             if (myRoom) {
                 await syncServerTime();
@@ -843,10 +839,6 @@
             if (e.key === 'Enter' && !e.shiftKey && document.activeElement === answerInput) {
                 e.preventDefault();
                 btnSend.click();
-            }
-            if (e.key === 'Control') {
-                e.preventDefault();
-                btnBuzz.click();
             }
         });
 
